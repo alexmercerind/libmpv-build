@@ -1,0 +1,15 @@
+# xcode iphoneos, min 14.0
+
+[binaries]
+pkg-config = 'pkg-config'
+
+[built-in options]
+buildtype = 'release'
+default_library = 'shared'
+wrap_mode = 'nodownload'
+
+[host_machine]
+system = 'darwin'
+cpu_family = 'aarch64'
+cpu = 'arm64'
+endian = 'little'

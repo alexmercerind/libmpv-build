@@ -1,0 +1,3 @@
+# system libs
+
+-lws2_32

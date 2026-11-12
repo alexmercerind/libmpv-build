@@ -1,0 +1,11 @@
+# audio outputs
+
+-Davfoundation=enabled
+-Dcoreaudio=enabled
+
+# sdk features
+
+-Dmacos-10-15-4-features=enabled
+-Dmacos-11-features=enabled
+-Dmacos-11-3-features=enabled
+-Dmacos-12-features=enabled

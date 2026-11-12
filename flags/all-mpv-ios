@@ -1,0 +1,7 @@
+# audio outputs
+
+-Daudiounit=enabled
+
+# video capture
+
+-Davfoundation=disabled

@@ -1,0 +1,9 @@
+name: bump-check
+on:
+  schedule:
+    - cron: "17 3 1 * *"
+  workflow_dispatch:
+
+jobs:
+  matrix:
+    uses: ./.github/workflows/build.yml

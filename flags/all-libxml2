@@ -1,0 +1,12 @@
+# base options
+
+-Ddocs=disabled
+-Diconv=disabled
+-Diso8859x=enabled
+-Dpython=disabled
+-Dreadline=disabled
+-Dzlib=enabled
+
+# link
+
+-Ddefault_library=static

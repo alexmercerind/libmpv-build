@@ -1,0 +1,15 @@
+# runner native gcc
+
+[binaries]
+pkg-config = 'pkg-config'
+
+[built-in options]
+buildtype = 'release'
+default_library = 'shared'
+wrap_mode = 'nodownload'
+
+[host_machine]
+system = 'linux'
+cpu_family = 'aarch64'
+cpu = 'aarch64'
+endian = 'little'

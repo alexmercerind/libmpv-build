@@ -1,0 +1,5 @@
+# audio outputs
+
+-Daaudio=enabled
+-Daudiotrack=enabled
+-Dopensles=enabled

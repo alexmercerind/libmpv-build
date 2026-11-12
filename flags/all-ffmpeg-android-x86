@@ -1,0 +1,3 @@
+# x86 asm needs PIC the 32-bit assembler cannot provide
+
+--disable-asm

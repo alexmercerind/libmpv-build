@@ -1,0 +1,11 @@
+diff --git a/TOOLS/matroska.py b/TOOLS/matroska.py
+--- a/TOOLS/matroska.py
++++ b/TOOLS/matroska.py
+@@ -4,6 +4,7 @@ Generate C definitions for parsing Matroska files.
+ Can also be used to directly parse Matroska files and display their contents.
+ """
+ 
++from __future__ import annotations
+ import sys
+ from binascii import hexlify
+ from math import ldexp

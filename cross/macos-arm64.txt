@@ -1,0 +1,15 @@
+# xcode macos, min 10.15
+
+[binaries]
+pkg-config = 'pkg-config'
+
+[built-in options]
+buildtype = 'release'
+default_library = 'shared'
+wrap_mode = 'nodownload'
+
+[host_machine]
+system = 'darwin'
+cpu_family = 'aarch64'
+cpu = 'aarch64'
+endian = 'little'

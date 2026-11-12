@@ -1,0 +1,7 @@
+# audio outputs
+
+-Dwasapi=enabled
+
+# threads
+
+-Dwin32-threads=enabled
