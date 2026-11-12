@@ -3,6 +3,9 @@
 -Davfoundation=enabled
 -Dcoreaudio=enabled
 
+# BUG: cocoa required in audio mode since v0.36.0, else utils-mac.c is skipped and audio-device-list crashes.
+-Dcocoa=enabled
+
 # sdk features
 
 -Dmacos-10-15-4-features=enabled
