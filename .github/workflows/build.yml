@@ -5,6 +5,10 @@ on:
   pull_request:
   workflow_call:
 
+permissions:
+  contents: write
+  actions: read
+
 jobs:
   build_audio:
     strategy:

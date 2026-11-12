@@ -11,6 +11,10 @@ on:
         description: Build run id whose artifacts to test
         required: true
 
+permissions:
+  contents: read
+  actions: read
+
 jobs:
   setup:
     runs-on: ubuntu-22.04
