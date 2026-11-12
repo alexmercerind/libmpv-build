@@ -1,0 +1,11 @@
+# threads
+
+--disable-pthreads
+
+# system libs
+
+--extra-libs=-lws2_32 -lbcrypt
+
+# libxml
+
+--extra-cflags=-DLIBXML_STATIC

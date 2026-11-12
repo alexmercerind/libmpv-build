@@ -1,0 +1,4 @@
+# audio outputs
+
+-Dalsa=enabled
+-Dpulse=enabled

@@ -1,0 +1,15 @@
+# ndk r27, api 21, 16k pages
+
+[binaries]
+pkg-config = 'pkg-config'
+
+[built-in options]
+buildtype = 'release'
+default_library = 'shared'
+wrap_mode = 'nodownload'
+
+[host_machine]
+system = 'android'
+cpu_family = 'aarch64'
+cpu = 'aarch64'
+endian = 'little'

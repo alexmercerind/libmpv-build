@@ -1,0 +1,22 @@
+diff --git a/meson.build b/meson.build
+--- a/meson.build
++++ b/meson.build
+@@ -25,12 +25,12 @@ endif
+ endif
+ 
+ # ffmpeg
+-libavcodec = dependency('libavcodec', version: '>= 60.31.102')
+-libavfilter = dependency('libavfilter', version: '>= 9.12.100')
+-libavformat = dependency('libavformat', version: '>= 60.16.100')
+-libavutil = dependency('libavutil', version: '>= 58.29.100')
+-libswresample = dependency('libswresample', version: '>= 4.12.100')
+-libswscale = dependency('libswscale', version: '>= 7.5.100')
++libavcodec = dependency('libavcodec', version: '>= 60.31.102', static: true)
++libavfilter = dependency('libavfilter', version: '>= 9.12.100', static: true)
++libavformat = dependency('libavformat', version: '>= 60.16.100', static: true)
++libavutil = dependency('libavutil', version: '>= 58.29.100', static: true)
++libswresample = dependency('libswresample', version: '>= 4.12.100', static: true)
++libswscale = dependency('libswscale', version: '>= 7.5.100', static: true)
+ 
+ # the dependency order of libass -> ffmpeg is necessary due to
+ # static linking symbol resolution between fontconfig and MinGW

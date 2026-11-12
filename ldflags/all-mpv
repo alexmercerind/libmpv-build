@@ -1,0 +1,7 @@
+# static deps
+
+-lmbedtls
+-lmbedx509
+-lmbedcrypto
+-lxml2
+-lz

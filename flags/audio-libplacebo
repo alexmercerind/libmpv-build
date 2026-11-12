@@ -1,0 +1,8 @@
+# base options
+
+-Ddemos=false
+-Dopengl=disabled
+-Dgl-proc-addr=disabled
+-Dlcms=disabled
+-Dvulkan=disabled
+-Ddefault_library=static

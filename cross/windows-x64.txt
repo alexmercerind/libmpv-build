@@ -1,0 +1,17 @@
+# llvm-mingw ucrt
+
+[binaries]
+pkg-config = 'pkg-config'
+dlltool = 'llvm-dlltool'
+windres = ['x86_64-w64-mingw32-windres', '--target=x86_64-w64-mingw32']
+
+[built-in options]
+buildtype = 'release'
+default_library = 'shared'
+wrap_mode = 'nodownload'
+
+[host_machine]
+system = 'windows'
+cpu_family = 'x86_64'
+cpu = 'x86_64'
+endian = 'little'
