@@ -1,0 +1,20 @@
+--- a/meson.build
++++ b/meson.build
+@@ -882,6 +882,17 @@
+                      'audio/out/ao_coreaudio_utils.c')
+ endif
+ 
++# osdep/utils-mac.c provides cfstr_from_cstr()/cfstr_get_cstr(), used by
++# ao_coreaudio_utils.c and ao_avfoundation.m. Upstream only compiles it as
++# part of the cocoa feature, but audio-only builds enable the CoreAudio /
++# AVFoundation outputs without cocoa. The missing object file goes unnoticed
++# at link time (dynamic_lookup) and the dangling symbols bind to NULL, so
++# mpv crashes (call through address 0) the first time ca_get_str() converts
++# an audio device UID, e.g. when audio-device-list is queried.
++if (features['audiounit'] or features['coreaudio'] or features['avfoundation']) and not features['cocoa']
++    sources += files('osdep/utils-mac.c')
++endif
++
+ if features['avfoundation']
+     sources += files('audio/out/ao_coreaudio_properties.c')
+ endif
