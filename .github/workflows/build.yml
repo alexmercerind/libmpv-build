@@ -1,7 +1,7 @@
 name: Build
 on:
   push:
-    branches: [main]
+    branches: [master]
   pull_request:
   workflow_call:
 
@@ -79,7 +79,7 @@ jobs:
           path: dist/*-debug.*
       - name: Publish Release
         uses: softprops/action-gh-release@v2
-        if: github.ref == 'refs/heads/main'
+        if: github.ref == 'refs/heads/master'
         with:
           draft: true
           prerelease: false
@@ -151,7 +151,7 @@ jobs:
           path: dist/*-debug.*
       - name: Publish Release
         uses: softprops/action-gh-release@v2
-        if: github.ref == 'refs/heads/main'
+        if: github.ref == 'refs/heads/master'
         with:
           draft: true
           prerelease: false
