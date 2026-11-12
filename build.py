@@ -897,7 +897,7 @@ def package_release_darwin(base: Path, build_target: BuildTarget, build_variant:
   <key>CFBundleIdentifier</key>
   <string>io.mpv.Mpv</string>
   <key>CFBundleInfoDictionaryVersion</key>
-  <string>1.0</string>
+  <string>6.0</string>
   <key>CFBundleName</key>
   <string>Mpv</string>
   <key>CFBundlePackageType</key>
