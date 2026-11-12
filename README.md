@@ -43,9 +43,9 @@ python3 -m venv .venv
 <tr><td rowspan="8">Linux</td><td><code>android-arm64-v8a</code></td></tr>
 <tr><td><code>android-armeabi-v7a</code></td></tr>
 <tr><td><code>android-x86</code></td></tr>
-<tr><td><code>android-x86-64</code></td></tr>
+<tr><td><code>android-x86_64</code></td></tr>
 <tr><td><code>linux-aarch64</code></td></tr>
-<tr><td><code>linux-x86-64</code></td></tr>
+<tr><td><code>linux-x86_64</code></td></tr>
 <tr><td><code>windows-arm64</code></td></tr>
 <tr><td><code>windows-x64</code></td></tr>
 <tr><td rowspan="5">macOS</td><td><code>ios-arm64</code></td></tr>

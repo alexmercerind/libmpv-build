@@ -3,6 +3,8 @@ from __future__ import annotations
 import argparse
 import hashlib
 import os
+import platform
+import re
 import shutil
 import stat
 import subprocess
@@ -13,13 +15,25 @@ import zipfile
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import NoReturn, TypedDict
+from typing import NoReturn, Optional, TypedDict
 
 import yaml
 
 # ----------------------------------------------------------------------------
 # Types
 # ----------------------------------------------------------------------------
+
+
+# Build OS
+class BuildOS(str, Enum):
+    ANDROID = "android"
+    IOS = "ios"
+    LINUX = "linux"
+    MACOS = "macos"
+    WINDOWS = "windows"
+
+    def __str__(self):
+        return self.value
 
 
 # Build arch
@@ -34,18 +48,6 @@ class BuildArch(str, Enum):
     X64 = "x64"
     X86 = "x86"
     X86_64 = "x86_64"
-
-    def __str__(self):
-        return self.value
-
-
-# Build OS
-class BuildOS(str, Enum):
-    ANDROID = "android"
-    IOS = "ios"
-    LINUX = "linux"
-    MACOS = "macos"
-    WINDOWS = "windows"
 
     def __str__(self):
         return self.value
@@ -114,7 +116,7 @@ class BuildEnvCommon(TypedDict):
     PKG_CONFIG_LIBDIR: str
     PKG_CONFIG_PATH: str
 
-
+# Build env
 class BuildEnv(BuildEnvCommon, total=False):
     # Darwin
     OBJC: str
@@ -228,9 +230,11 @@ def main() -> int:
     build_variant = args.variant
     print(f"building {build_target} {build_variant}", flush=True)
     base = Path(__file__).resolve().parent
+    check_host_compat(build_target)
     dependencies = get_dependencies(base)
     cross_file = base / CROSS_DIR / f"{build_target}.txt"
     prefix = base / DEPS_DIR / f"{PREFIX}{build_target}"
+    shutil.rmtree(prefix, ignore_errors=True)
     build_env = get_target_env(base, build_target, prefix)
     for dependency in dependencies:
         print(f"building {dependency.name}", flush=True)
@@ -252,14 +256,22 @@ def main() -> int:
 def get_dependencies(base: Path) -> list[Dependency]:
     entries = {}
     for item in yaml.safe_load((base / DEPENDENCIES_FILE).read_text()):
+        try:
+            tool = BuildTool(item["tool"])
+        except ValueError:
+            abort(f"unknown tool: {item['tool']} for dependency {item['name']}")
         entries[item["name"]] = Dependency(
             name=item["name"],
             version=item["version"],
             url=item["url"],
             sha256=item["sha256"],
-            tool=BuildTool(item["tool"]),
+            tool=tool,
             dependencies=item["dependencies"],
         )
+    for name, entry in entries.items():
+        for edge in entry.dependencies:
+            if edge not in entries:
+                abort(f"unknown dependency: {edge} (required by {name})")
     tree = {name: entry.dependencies for name, entry in entries.items()}
     order = []
     done = set()
@@ -314,6 +326,40 @@ def fetch_llvm_mingw(base: Path) -> Path:
         inner.rmdir()
     archive.unlink()
     return root
+
+
+# Fails fast when the host cannot produce the requested target instead of
+# emitting a broken or mislabeled artifact (e.g. x86_64 objects filed as
+# linux-aarch64, or an obscure xcrun/toolchain traceback).
+def check_host_compat(
+    build_target: BuildTarget,
+    host_platform: Optional[str] = None,
+    host_machine: Optional[str] = None,
+) -> None:
+    if host_platform is None:
+        host_platform = sys.platform
+    if host_machine is None:
+        host_machine = platform.machine()
+    machine = host_machine.lower()
+    machine = {"amd64": "x86_64", "arm64": "aarch64"}.get(machine, machine)
+    build_os = build_target.build_os
+    if build_os == BuildOS.IOS or build_os == BuildOS.MACOS:
+        if host_platform != "darwin":
+            abort(f"{build_target} requires a macOS host")
+    elif build_os == BuildOS.WINDOWS:
+        # The pinned llvm-mingw asset is a Linux build.
+        if host_platform != "linux":
+            abort(f"{build_target} requires a Linux host")
+    elif build_os == BuildOS.ANDROID:
+        # The NDK ships a linux-x86_64 prebuilt toolchain only.
+        if host_platform != "linux" or machine != "x86_64":
+            abort(f"{build_target} requires a Linux x86_64 host")
+    else:
+        if host_platform != "linux":
+            abort(f"{build_target} requires a Linux host")
+        want = "aarch64" if build_target == BuildTarget.LINUX_AARCH64 else "x86_64"
+        if machine != want:
+            abort(f"{build_target} requires a {want} host, not {host_machine}")
 
 
 # ----------------------------------------------------------------------------
@@ -570,6 +616,7 @@ def get_target_env(base: Path, build_target: BuildTarget, prefix: Path) -> Build
             "OBJC": clang,
             "OBJCFLAGS": "-g -arch x86_64 -mmacosx-version-min=10.15",
             "SDKROOT": darwin_sdk_path("macosx"),
+            "MACOS_SDK": darwin_sdk_path("macosx"),
             "DSYMUTIL": darwin_xcrun("macosx", "dsymutil"),
             "AS": "nasm",
         }
@@ -590,6 +637,7 @@ def get_target_env(base: Path, build_target: BuildTarget, prefix: Path) -> Build
             "OBJC": clang,
             "OBJCFLAGS": "-g -arch arm64 -mmacosx-version-min=10.15",
             "SDKROOT": darwin_sdk_path("macosx"),
+            "MACOS_SDK": darwin_sdk_path("macosx"),
             "DSYMUTIL": darwin_xcrun("macosx", "dsymutil"),
         }
 
@@ -614,7 +662,8 @@ def layers(name: str, build_target: BuildTarget, build_variant: BuildVariant) ->
 # Gets patch files matching variant, name, os, and arch
 def get_patch_files(base: Path, name: str, build_target: BuildTarget, build_variant: BuildVariant) -> list[Path]:
     out = []
-    for layer in sorted(layers(name, build_target, build_variant)):
+    # Generic layers first so specific layers win, mirroring get_flags.
+    for layer in layers(name, build_target, build_variant):
         top = base / PATCHES_DIR / layer
         if top.is_dir():
             out += sorted(top.iterdir())
@@ -684,7 +733,7 @@ def build_dependency(base: Path, dependency: Dependency, build_target: BuildTarg
     elif dependency.tool == BuildTool.MESON:
         build_meson(src, prefix, cross_file, flags, build_env)
     elif dependency.tool == BuildTool.CMAKE:
-        build_cmake(src, prefix, flags, build_env)
+        build_cmake(src, build_target, prefix, flags, build_env)
     else:
         build_configure(src, prefix, flags, build_env)
 
@@ -771,19 +820,26 @@ def build_meson(src: Path, prefix: Path, cross_file: Path, args: list[str], buil
 
 
 # Builds and installs with cmake
-def build_cmake(src: Path, prefix: Path, args: list[str], build_env: BuildEnv) -> None:
+def build_cmake(src: Path, build_target: BuildTarget, prefix: Path, args: list[str], build_env: BuildEnv) -> None:
     builddir = src / BUILD_DIR
     shutil.rmtree(builddir, ignore_errors=True)
     builddir.mkdir()
-    run(
-        [
-            "cmake",
-            f"-DCMAKE_INSTALL_PREFIX={prefix}",
-            f"-DCMAKE_C_COMPILER={build_env['CC']}",
-            f"-DCMAKE_CXX_COMPILER={build_env['CXX']}",
+    cmake_args = [
+        "cmake",
+        f"-DCMAKE_INSTALL_PREFIX={prefix}",
+        f"-DCMAKE_C_COMPILER={build_env['CC']}",
+        f"-DCMAKE_CXX_COMPILER={build_env['CXX']}",
+        # Never try to execute target binaries during feature checks.
+        "-DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY",
+    ]
+    if build_target.build_os == BuildOS.WINDOWS:
+        processor = "ARM64" if build_target.build_arch == BuildArch.ARM64 else "AMD64"
+        cmake_args += [
+            "-DCMAKE_SYSTEM_NAME=Windows",
+            f"-DCMAKE_SYSTEM_PROCESSOR={processor}",
         ]
-        + args
-        + [str(src)],
+    run(
+        cmake_args + args + [str(src)],
         builddir,
         build_env,
     )
@@ -870,7 +926,7 @@ def package_release_darwin(base: Path, build_target: BuildTarget, build_variant:
     dist = base / DIST_DIR
     dist.mkdir(exist_ok=True)
     stem = f"libmpv_{build_target.build_os}_{build_target.build_arch}_{build_variant}"
-    version = "1.0"
+    version = next(d.version for d in get_dependencies(base) if d.name == "mpv")
     work = base / DEPS_DIR / f"framework-{build_target}"
     shutil.rmtree(work, ignore_errors=True)
     vers = work / "Mpv.framework" / "Versions" / "A"
@@ -884,7 +940,13 @@ def package_release_darwin(base: Path, build_target: BuildTarget, build_variant:
     run(["install_name_tool", "-id", "@rpath/Mpv.framework/Mpv", str(vers / "Mpv")], base)
     for leaf in sorted((prefix / "include" / "mpv").glob("*.h")):
         shutil.copy(leaf, vers / "Headers" / leaf.name)
-    (vers / "Headers" / "Mpv.h").write_text('#import "client.h"\n#import "render.h"\n#import "render_gl.h"\n#import "stream_cb.h"\n')
+    (vers / "Headers" / "Mpv.h").write_text(
+        '#import "client.h"\n'
+        '#import "render.h"\n'
+        '#import "render_gl.h"\n'
+        '#import "render_d3d11.h"\n'
+        '#import "stream_cb.h"\n'
+    )
     (vers / "Modules" / "module.modulemap").write_text('framework module Mpv {\n  umbrella header "Mpv.h"\n  export *\n  module * { export * }\n}\n')
     (vers / "Resources" / "Info.plist").write_text(f"""<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -934,22 +996,20 @@ def package_release_android(base: Path, build_target: BuildTarget, build_variant
     libs = sorted(leaf for leaf in (prefix / "lib").iterdir() if not leaf.is_dir() and leaf.suffix != ".a")
     names = {"libmpv.so"}
     for leaf in libs:
-        out = subprocess.run(["strings", "-a", leaf.resolve()], capture_output=True, check=True)
-        text = out.stdout.decode("utf-8", "replace")
-        names |= {token for token in text.split() if token.startswith("lib") and ".so" in token}
+        names |= shared_lib_needed(leaf)
     libs = [leaf for leaf in libs if leaf.name in names]
     path = dist / f"{stem}.{RELEASE_ARCHIVE_EXT[build_target.build_os]}"
     src = base / DEPS_DIR / f"src-{build_target}"
     shutil.rmtree(src, ignore_errors=True)
     (src / "lib" / build_target.build_arch).mkdir(parents=True)
     for leaf in libs:
-        shutil.copy2(leaf, src / "lib" / build_target.build_arch / leaf.name)
+        copy_preserving_symlink(leaf, src / "lib" / build_target.build_arch)
     archive(src, path, ["lib"])
     shutil.rmtree(src, ignore_errors=True)
     return path
 
 
-# Packs release shared libraries and headers in a jar
+# Packs release shared libraries and headers in a zip
 # Release zip:
 #   include/mpv/*.h
 #   *.dll.a
@@ -991,7 +1051,7 @@ def package_release_linux(base: Path, build_target: BuildTarget, build_variant: 
     (src / "lib").mkdir(parents=True)
     for leaf in sorted((prefix / "lib").iterdir()):
         if not leaf.is_dir() and leaf.suffix != ".a":
-            shutil.copy2(leaf, src / "lib" / leaf.name)
+            copy_preserving_symlink(leaf, src / "lib")
     shutil.copytree(prefix / "include", src / "include")
     archive(src, path, ["lib", "include"])
     shutil.rmtree(src, ignore_errors=True)
@@ -1090,27 +1150,30 @@ def package_debug_linux(base: Path, build_target: BuildTarget, build_variant: Bu
 
 # Downloads a file
 def download(url: str, sha: str, dest: Path) -> None:
-    def verify() -> None:
+    def matches() -> bool:
         digest = hashlib.sha256()
         with open(dest, "rb") as handle:
             for chunk in iter(lambda: handle.read(65536), b""):
                 digest.update(chunk)
-        if digest.hexdigest() != sha:
-            dest.unlink()
-            abort(f"bad sha256: {dest}")
+        return digest.hexdigest() == sha
 
-    if dest.exists():
-        verify()
+    if dest.exists() and matches():
         return
+    # A stale or corrupt cache is refetched in the same run, not fatal.
+    if dest.exists():
+        dest.unlink()
     for attempt in (1, 2, 3):
         try:
             with urllib.request.urlopen(url, timeout=120) as response, open(dest, "wb") as handle:
                 shutil.copyfileobj(response, handle)
-            verify()
-            return
         except (OSError, ValueError):
             if attempt == 3:
                 raise
+            continue
+        if matches():
+            return
+        dest.unlink(missing_ok=True)
+    abort(f"bad sha256: {dest}")
 
 
 # Archives a zip file
@@ -1124,12 +1187,42 @@ def archive(src: Path, dest: Path, members: list[str]) -> None:
             for kid in sorted(leaf.iterdir()):
                 visit(kid, f"{archive_name}/{kid.name}")
         else:
-            bundle.write(leaf, archive_name)
+            # Fixed timestamp so identical inputs produce identical zips.
+            info = zipfile.ZipInfo(archive_name, date_time=(1980, 1, 1, 0, 0, 0))
+            info.create_system = 3
+            info.compress_type = zipfile.ZIP_DEFLATED
+            info.external_attr = (stat.S_IFREG | stat.S_IMODE(leaf.stat().st_mode)) << 16
+            with open(leaf, "rb") as handle:
+                bundle.writestr(info, handle.read())
 
     dest.unlink(missing_ok=True)
     with zipfile.ZipFile(dest, "w", zipfile.ZIP_DEFLATED) as bundle:
         for member in members:
             visit(src / member, member)
+
+
+# Copies one file, preserving symlinks instead of dereferencing them
+def copy_preserving_symlink(leaf: Path, dest: Path) -> None:
+    target = dest / leaf.name
+    if leaf.is_symlink():
+        if target.is_symlink() or target.exists():
+            target.unlink()
+        target.symlink_to(os.readlink(leaf))
+    else:
+        shutil.copy2(leaf, target)
+
+
+# Lists the libraries a shared object resolves at load time, read from
+# its DT_NEEDED entries with a string-table heuristic as fallback
+def shared_lib_needed(leaf: Path) -> set[str]:
+    try:
+        done = subprocess.run(["readelf", "-d", str(leaf)], capture_output=True, check=True)
+    except (OSError, subprocess.CalledProcessError):
+        out = subprocess.run(["strings", "-a", leaf.resolve()], capture_output=True, check=True)
+        text = out.stdout.decode("utf-8", "replace")
+        return {token for token in text.split() if token.startswith("lib") and ".so" in token}
+    text = done.stdout.decode("utf-8", "replace")
+    return {match.group(1) for match in re.finditer(r"\(NEEDED\)[^[]*\[([^\]]+)\]", text)}
 
 
 # Unarchives a zip or tarball file
@@ -1151,7 +1244,11 @@ def unarchive(src: Path, dest: Path) -> Path:
                         target.chmod(mode)
     else:
         with tarfile.open(src) as bundle:
-            bundle.extractall(dest)
+            try:
+                bundle.extractall(dest, filter="data")
+            except TypeError:
+                # Python without tarfile filters (< 3.12 on most distros).
+                bundle.extractall(dest)
     return dest
 
 
@@ -1163,7 +1260,7 @@ def unarchive(src: Path, dest: Path) -> Path:
 # Runs a command and aborts on failure
 def run(cmd: list[str], cwd: Path, build_env: BuildEnv = {}) -> None:
     env = {**os.environ, **build_env}
-    if "BINDIR" in build_env:
+    if build_env and "BINDIR" in build_env:
         env["PATH"] = build_env["BINDIR"] + os.pathsep + env["PATH"]
     done = subprocess.run(cmd, cwd=cwd, env=env)
     if done.returncode != 0:

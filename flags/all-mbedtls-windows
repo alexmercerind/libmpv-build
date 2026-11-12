@@ -1,3 +1,0 @@
-# windows target
-
--DCMAKE_SYSTEM_NAME=Windows
