@@ -1,0 +1,13 @@
+--- a/stream/network.c
++++ b/stream/network.c
+@@ -51,9 +51,7 @@
+     .defaults = &(const struct mp_network_opts){
+         .useragent = "libmpv",
+         .timeout = 60,
+-#if HAVE_LIBCURL || LIBAVFORMAT_VERSION_MAJOR >= 63
+-        .tls_verify = true,
+-#endif
++        /* tls_verify stays off: previous binaries never verified, mbedtls has no system store. */
+     },
+ };
+ 
