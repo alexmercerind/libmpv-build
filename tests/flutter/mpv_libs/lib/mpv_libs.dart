@@ -4,7 +4,6 @@ import 'dart:io';
 import 'package:ffi/ffi.dart';
 
 const testUrl = 'https://upload.wikimedia.org/wikipedia/commons/1/1a/Aaron_Dunn_-_Minuet_-_Notebook_for_Anna_Magdalena.ogg';
-const caBundlePath = 'assets/cacert.pem';
 
 typedef _VersionC = Int32 Function();
 typedef _CreateC = Pointer<Void> Function();
@@ -185,40 +184,37 @@ Future<int> checkPlayback(String url) async {
   if (setString(handle, 'idle', 'yes') != 0) {
     return 5;
   }
-  if (setString(handle, 'tls-ca-file', File(caBundlePath).absolute.path) != 0) {
+  if (mpvInitialize(handle) != 0) {
     return 6;
   }
-  if (mpvInitialize(handle) != 0) {
+  if (loadFile(handle, url) != 0) {
     return 7;
   }
-  if (loadFile(handle, url) != 0) {
-    return 8;
-  }
   if (waitForEvent(handle, playbackRestartEvent, 45) != 0) {
-    return 9;
+    return 8;
   }
   final duration = double.tryParse(getProperty(handle, 'duration') ?? '');
   if (duration == null || duration <= 0) {
-    return 10;
+    return 9;
   }
   final first = double.tryParse(getProperty(handle, 'time-pos') ?? '');
   if (first == null || first < 0) {
-    return 11;
+    return 10;
   }
   await Future<void>.delayed(const Duration(seconds: 2));
   final second = double.tryParse(getProperty(handle, 'time-pos') ?? '');
   if (second != null && second < first) {
-    return 11;
+    return 10;
   }
   if (setProperty(handle, 'pause', 'yes') != 0 || getProperty(handle, 'pause') != 'yes') {
-    return 12;
+    return 11;
   }
   if (setProperty(handle, 'pause', 'no') != 0 || getProperty(handle, 'pause') != 'no') {
-    return 13;
+    return 12;
   }
   stopPlayback(handle);
   if (waitForIdle(handle, 10) != 0) {
-    return 14;
+    return 13;
   }
   mpvDestroy(handle);
   return 0;
