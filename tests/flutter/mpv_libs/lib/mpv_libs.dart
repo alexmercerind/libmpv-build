@@ -142,32 +142,6 @@ int stopPlayback(Pointer<Void> handle) {
   return code;
 }
 
-Future<String?> downloadToTemp(String url) async {
-  final client = HttpClient();
-  try {
-    for (var attempt = 0; attempt < 5; attempt++) {
-      try {
-        final request = await client.getUrl(Uri.parse(url));
-        final response = await request.close();
-        if (response.statusCode != 200) {
-          await Future<void>.delayed(Duration(seconds: 2 * (attempt + 1)));
-          continue;
-        }
-        final chunks = await response.toList();
-        final file = File(
-            '${Directory.systemTemp.path}/libmpv_check_${DateTime.now().millisecondsSinceEpoch}.ogg');
-        await file.writeAsBytes(chunks.expand((chunk) => chunk).toList());
-        return file.path;
-      } catch (_) {
-        await Future<void>.delayed(Duration(seconds: 2 * (attempt + 1)));
-      }
-    }
-    return null;
-  } finally {
-    client.close();
-  }
-}
-
 double? waitForDuration(Pointer<Void> handle, int timeoutSeconds) {
   final deadline = DateTime.now().add(Duration(seconds: timeoutSeconds));
   while (DateTime.now().isBefore(deadline)) {
@@ -226,40 +200,36 @@ Future<int> checkPlayback(String url) async {
   if (mpvInitialize(handle) != 0) {
     return 6;
   }
-  final path = await downloadToTemp(url);
-  if (path == null) {
+  if (loadFile(handle, url) != 0) {
     return 7;
   }
-  if (loadFile(handle, path) != 0) {
+  if (waitForEvent(handle, startFileEvent, 45) != 0) {
     return 8;
   }
-  if (waitForEvent(handle, startFileEvent, 45) != 0) {
+  if (waitForEvent(handle, playbackRestartEvent, 45) != 0) {
     return 9;
   }
-  if (waitForEvent(handle, playbackRestartEvent, 45) != 0) {
-    return 10;
-  }
   if (waitForDuration(handle, 15) == null) {
-    return 11;
+    return 10;
   }
   final first = double.tryParse(getProperty(handle, 'time-pos') ?? '');
   if (first == null || first < 0) {
-    return 12;
+    return 11;
   }
   await Future<void>.delayed(const Duration(seconds: 2));
   final second = double.tryParse(getProperty(handle, 'time-pos') ?? '');
   if (second != null && second < first) {
-    return 12;
+    return 11;
   }
   if (setProperty(handle, 'pause', 'yes') != 0 || getProperty(handle, 'pause') != 'yes') {
-    return 13;
+    return 12;
   }
   if (setProperty(handle, 'pause', 'no') != 0 || getProperty(handle, 'pause') != 'no') {
-    return 14;
+    return 13;
   }
   stopPlayback(handle);
   if (waitForIdle(handle, 10) != 0) {
-    return 15;
+    return 14;
   }
   mpvDestroy(handle);
   return 0;
