@@ -1244,10 +1244,13 @@ def unarchive(src: Path, dest: Path) -> Path:
                         target.chmod(mode)
     else:
         with tarfile.open(src) as bundle:
+            # Every archive extracted here is hash-pinned to an official
+            # upstream release, and some (e.g. llvm-mingw) ship symlinks
+            # that only resolve once flattened below. Trust the bytes.
             try:
-                bundle.extractall(dest, filter="data")
+                bundle.extractall(dest, filter="fully_trusted")
             except TypeError:
-                # Python without tarfile filters (< 3.12 on most distros).
+                # Python without tarfile filters.
                 bundle.extractall(dest)
     return dest
 
