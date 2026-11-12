@@ -1,0 +1,177 @@
+name: Test
+on:
+  workflow_call:
+    inputs:
+      run-id:
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      run-id:
+        description: Build run id whose artifacts to test
+        required: true
+
+jobs:
+  setup:
+    runs-on: ubuntu-22.04
+    name: Setup
+    outputs:
+      run-id: ${{ inputs.run-id }}
+      sha: ${{ steps.pick.outputs.sha }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Pick Build Run
+        id: pick
+        run: echo "sha=$(gh run view '${{ inputs.run-id }}' --repo '$GITHUB_REPOSITORY' --json headSha --jq .headSha)" >> "$GITHUB_OUTPUT"
+
+  test_linux:
+    needs: setup
+    runs-on: ubuntu-24.04
+    name: Linux
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Check Out Code
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.setup.outputs.sha }}
+      - name: Install Host Tools
+        run: |
+          { printf 'nameserver 8.8.8.8\nnameserver 1.1.1.1\noptions timeout:5 attempts:2\n'; cat /etc/resolv.conf; } | sudo tee /etc/resolv.conf > /dev/null
+          sudo apt-get update && sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev xvfb libpulse0 libasound2t64
+          ldconfig -p | grep -q "libasound\.so\.2" && ldconfig -p | grep -q "libpulse\.so\.0"
+      - name: Set Up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - name: Stage Plugin Libraries
+        run: |
+          mkdir -p staged/linux artifacts/linux
+          gh run download "${{ needs.setup.outputs.run-id }}" --repo "$GITHUB_REPOSITORY" --name "libmpv-linux-x86_64-audio" --dir artifacts/linux
+          unzip -o -q artifacts/linux/libmpv_linux_x86_64_audio.zip -d staged/linux
+          cp staged/linux/lib/libmpv.so* tests/flutter/mpv_libs/linux/native/
+      - name: Run Playback Test
+        run: |
+          flutter pub get
+          export LD_LIBRARY_PATH=$PWD/mpv_libs/linux/native
+          xvfb-run -a flutter test integration_test/mpv_test.dart -d linux
+        working-directory: tests/flutter
+
+  test_macos:
+    needs: setup
+    runs-on: macos-15
+    name: macOS
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Check Out Code
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.setup.outputs.sha }}
+      - name: Set Up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - name: Stage Plugin Libraries
+        run: |
+          mkdir -p tests/flutter/mpv_libs/macos/mpv_libs/Frameworks
+          gh run download "${{ needs.setup.outputs.run-id }}" --repo "$GITHUB_REPOSITORY" --name "libmpv-macos-arm64-audio" --dir "$RUNNER_TEMP/artifacts"
+          ditto -x -k "$RUNNER_TEMP/artifacts/libmpv_macos_arm64_audio.zip" tests/flutter/mpv_libs/macos/mpv_libs/Frameworks/
+          test -f tests/flutter/mpv_libs/macos/mpv_libs/Frameworks/Mpv.xcframework/macos-arm64/Mpv.framework/Versions/A/Mpv
+      - name: Run Playback Test
+        run: |
+          flutter pub get
+          flutter test integration_test/mpv_test.dart -d macos
+        working-directory: tests/flutter
+
+  test_windows:
+    needs: setup
+    runs-on: windows-latest
+    name: Windows
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Check Out Code
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.setup.outputs.sha }}
+      - name: Set Up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - name: Stage Plugin Libraries
+        run: |
+          gh run download "${{ needs.setup.outputs.run-id }}" --repo "$GITHUB_REPOSITORY" --name "libmpv-windows-x64-audio" --dir artifacts/windows
+          Expand-Archive -Force artifacts/windows/libmpv_windows_x64_audio.zip staged/windows
+          Copy-Item staged/windows/*.dll tests/flutter/mpv_libs/windows/native/
+      - name: Run Playback Test
+        run: |
+          flutter pub get
+          $env:PATH = "$PWD/mpv_libs/windows/native;$env:PATH"
+          flutter test integration_test/mpv_test.dart -d windows
+        working-directory: tests/flutter
+
+  test_android:
+    needs: setup
+    runs-on: ubuntu-22.04
+    name: Android
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Check Out Code
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.setup.outputs.sha }}
+      - name: Set Up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - name: Set Up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - name: Stage Plugin Libraries
+        run: |
+          mkdir -p tests/flutter/mpv_libs/android/libs "$RUNNER_TEMP/mpvjar"
+          gh run download "${{ needs.setup.outputs.run-id }}" --repo "$GITHUB_REPOSITORY" --name "libmpv-android-x86_64-audio" --dir "$RUNNER_TEMP/mpvjar"
+          cp "$RUNNER_TEMP/mpvjar"/*.jar tests/flutter/mpv_libs/android/libs/
+      - name: Run Playback Test
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 29
+          arch: x86_64
+          script: cd "$GITHUB_WORKSPACE/tests/flutter" && flutter pub get && flutter test integration_test/mpv_test.dart -d emulator-5554
+
+  test_ios:
+    needs: setup
+    runs-on: macos-15
+    name: iOS
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Check Out Code
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.setup.outputs.sha }}
+      - name: Set Up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - name: Boot Simulator
+        run: |
+          udid=$(xcrun simctl list devices available -j | python3 -c "import json,sys; devices=json.load(sys.stdin)['devices']; phones=[d['udid'] for k in devices for d in devices[k] if 'iPhone' in d.get('name','') and d.get('isAvailable',True)]; print(phones[0])")
+          xcrun simctl boot "$udid"
+          echo "IOS_SIMULATOR_UDID=$udid" >> "$GITHUB_ENV"
+      - name: Stage Plugin Libraries
+        run: |
+          mkdir -p tests/flutter/mpv_libs/ios/mpv_libs/Frameworks
+          gh run download "${{ needs.setup.outputs.run-id }}" --repo "$GITHUB_REPOSITORY" --name "libmpv-ios-simulator-arm64-audio" --dir "$RUNNER_TEMP/artifacts"
+          ditto -x -k "$RUNNER_TEMP/artifacts/libmpv_ios_simulator-arm64_audio.zip" tests/flutter/mpv_libs/ios/mpv_libs/Frameworks/
+          test -f tests/flutter/mpv_libs/ios/mpv_libs/Frameworks/Mpv.xcframework/ios-arm64-simulator/Mpv.framework/Versions/A/Mpv
+      - name: Run Playback Test
+        run: |
+          flutter pub get
+          flutter test integration_test/mpv_test.dart -d "$IOS_SIMULATOR_UDID"
+        working-directory: tests/flutter
