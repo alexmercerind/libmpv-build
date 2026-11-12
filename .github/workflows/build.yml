@@ -168,3 +168,94 @@ jobs:
     uses: ./.github/workflows/test.yml
     with:
       run-id: ${{ github.run_id }}
+
+  combine_darwin:
+    needs: build_audio
+    runs-on: macos-15
+    name: Combine universal macOS/iOS
+    steps:
+      - name: Download macOS arm64 slice
+        uses: actions/download-artifact@v6
+        with:
+          name: libmpv-macos-arm64-audio
+          path: ${{ runner.temp }}/slices/macos-arm64
+      - name: Download macOS amd64 slice
+        uses: actions/download-artifact@v6
+        with:
+          name: libmpv-macos-amd64-audio
+          path: ${{ runner.temp }}/slices/macos-amd64
+      - name: Download iOS arm64 slice
+        uses: actions/download-artifact@v6
+        with:
+          name: libmpv-ios-arm64-audio
+          path: ${{ runner.temp }}/slices/ios-arm64
+      - name: Download iOS simulator arm64 slice
+        uses: actions/download-artifact@v6
+        with:
+          name: libmpv-ios-simulator-arm64-audio
+          path: ${{ runner.temp }}/slices/ios-simulator-arm64
+      - name: Download iOS simulator amd64 slice
+        uses: actions/download-artifact@v6
+        with:
+          name: libmpv-ios-simulator-amd64-audio
+          path: ${{ runner.temp }}/slices/ios-simulator-amd64
+      - name: Build universal xcframeworks
+        run: |
+          set -euo pipefail
+          work="${{ runner.temp }}/combine"
+          rm -rf "$work"
+          mkdir -p "$work"
+          cd "${{ runner.temp }}/slices"
+          unzip -q -o macos-arm64/libmpv_macos_arm64_audio.zip -d macos-arm64/xc
+          unzip -q -o macos-amd64/libmpv_macos_amd64_audio.zip -d macos-amd64/xc
+          unzip -q -o ios-arm64/libmpv_ios_arm64_audio.zip -d ios-arm64/xc
+          unzip -q -o ios-simulator-arm64/libmpv_ios_simulator-arm64_audio.zip -d ios-simulator-arm64/xc
+          unzip -q -o ios-simulator-amd64/libmpv_ios_simulator-amd64_audio.zip -d ios-simulator-amd64/xc
+          macos_arm64_fw=$(echo macos-arm64/xc/Mpv.xcframework/*/Mpv.framework)
+          macos_amd64_fw=$(echo macos-amd64/xc/Mpv.xcframework/*/Mpv.framework)
+          test -f "$macos_arm64_fw/Versions/A/Mpv"
+          test -f "$macos_amd64_fw/Versions/A/Mpv"
+          rm -rf "$work/macos-universal"
+          mkdir -p "$work/macos-universal"
+          cp -R "$macos_arm64_fw" "$work/macos-universal/Mpv.framework"
+          lipo -create "$macos_arm64_fw/Versions/A/Mpv" "$macos_amd64_fw/Versions/A/Mpv" -output "$work/macos-universal/Mpv.framework/Versions/A/Mpv"
+          codesign --force --sign - "$work/macos-universal/Mpv.framework/Versions/A/Mpv"
+          lipo -info "$work/macos-universal/Mpv.framework/Versions/A/Mpv"
+          xcodebuild -create-xcframework -framework "$work/macos-universal/Mpv.framework" -output "$work/macos-universal/Mpv.xcframework"
+          ios_arm64_fw=$(echo ios-arm64/xc/Mpv.xcframework/*/Mpv.framework)
+          ios_sim_arm64_fw=$(echo ios-simulator-arm64/xc/Mpv.xcframework/*/Mpv.framework)
+          ios_sim_amd64_fw=$(echo ios-simulator-amd64/xc/Mpv.xcframework/*/Mpv.framework)
+          test -f "$ios_arm64_fw/Versions/A/Mpv"
+          test -f "$ios_sim_arm64_fw/Versions/A/Mpv"
+          test -f "$ios_sim_amd64_fw/Versions/A/Mpv"
+          rm -rf "$work/ios-simulator-universal"
+          mkdir -p "$work/ios-simulator-universal"
+          cp -R "$ios_sim_arm64_fw" "$work/ios-simulator-universal/Mpv.framework"
+          lipo -create "$ios_sim_arm64_fw/Versions/A/Mpv" "$ios_sim_amd64_fw/Versions/A/Mpv" -output "$work/ios-simulator-universal/Mpv.framework/Versions/A/Mpv"
+          codesign --force --sign - "$work/ios-simulator-universal/Mpv.framework/Versions/A/Mpv"
+          lipo -info "$work/ios-simulator-universal/Mpv.framework/Versions/A/Mpv"
+          rm -rf "$work/ios-universal"
+          mkdir -p "$work/ios-universal"
+          xcodebuild -create-xcframework -framework "$ios_arm64_fw" -framework "$work/ios-simulator-universal/Mpv.framework" -output "$work/ios-universal/Mpv.xcframework"
+          cd "$work/macos-universal"
+          zip -qry "$work/libmpv_macos_universal_audio.zip" Mpv.xcframework
+          cd "$work/ios-universal"
+          zip -qry "$work/libmpv_ios_universal_audio.zip" Mpv.xcframework
+      - name: Upload macOS universal artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: libmpv-macos-universal-audio
+          path: ${{ runner.temp }}/combine/libmpv_macos_universal_audio.zip
+      - name: Upload iOS universal artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: libmpv-ios-universal-audio
+          path: ${{ runner.temp }}/combine/libmpv_ios_universal_audio.zip
+      - name: Publish Release
+        uses: softprops/action-gh-release@v2
+        if: github.ref == 'refs/heads/master'
+        with:
+          draft: true
+          prerelease: false
+          tag_name: vnext
+          files: ${{ runner.temp }}/combine/*.zip
