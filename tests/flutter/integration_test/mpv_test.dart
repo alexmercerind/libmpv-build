@@ -7,5 +7,5 @@ void main() {
   testWidgets('mpv playback', (tester) async {
     final code = await checkPlayback(testUrl);
     expect(code, 0);
-  });
+  }, timeout: const Timeout(Duration(minutes: 5)));
 }

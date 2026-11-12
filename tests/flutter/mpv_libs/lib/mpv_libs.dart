@@ -9,8 +9,7 @@ typedef _VersionC = Int32 Function();
 typedef _CreateC = Pointer<Void> Function();
 typedef _SetOptionC = Int32 Function(Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>);
 typedef _SetPropertyC = Int32 Function(Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>);
-typedef _GetPropertyC = Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>);
-typedef _FreeC = Void Function(Pointer<Void>);
+typedef _ObserveC = Int32 Function(Pointer<Void>, Uint64, Pointer<Utf8>, Int32);
 typedef _WaitEventC = Pointer<MpvEvent> Function(Pointer<Void>, Double);
 typedef _InitC = Int32 Function(Pointer<Void>);
 typedef _CommandC = Int32 Function(Pointer<Void>, Pointer<Utf8>);
@@ -20,8 +19,7 @@ typedef _VersionFn = int Function();
 typedef _CreateFn = Pointer<Void> Function();
 typedef _SetOptionFn = int Function(Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>);
 typedef _SetPropertyFn = int Function(Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>);
-typedef _GetPropertyFn = Pointer<Utf8> Function(Pointer<Void>, Pointer<Utf8>);
-typedef _FreeFn = void Function(Pointer<Void>);
+typedef _ObserveFn = int Function(Pointer<Void>, int, Pointer<Utf8>, int);
 typedef _WaitEventFn = Pointer<MpvEvent> Function(Pointer<Void>, double);
 typedef _InitFn = int Function(Pointer<Void>);
 typedef _CommandFn = int Function(Pointer<Void>, Pointer<Utf8>);
@@ -40,17 +38,41 @@ final class MpvEvent extends Struct {
   external Pointer<Void> data;
 }
 
+final class MpvEventProperty extends Struct {
+  external Pointer<Utf8> name;
+
+  @Int32()
+  external int format;
+
+  external Pointer<Void> data;
+}
+
+const noEvent = 0;
 const shutdownEvent = 1;
 const startFileEvent = 6;
 const endFileEvent = 7;
 const playbackRestartEvent = 21;
+const propertyChangeEvent = 22;
+const flagFormat = 3;
+const doubleFormat = 5;
+
+const eventNames = <int, String>{
+  0: 'none',
+  1: 'shutdown',
+  6: 'start-file',
+  7: 'end-file',
+  8: 'file-loaded',
+  21: 'playback-restart',
+  22: 'property-change',
+};
+
+final List<String> eventTrace = [];
 
 late final _VersionFn _version;
 late final _CreateFn _create;
 late final _SetOptionFn _setOption;
 late final _SetPropertyFn _setProperty;
-late final _GetPropertyFn _getProperty;
-late final _FreeFn _free;
+late final _ObserveFn _observe;
 late final _WaitEventFn _waitEvent;
 late final _InitFn _initialize;
 late final _CommandFn _command;
@@ -74,8 +96,7 @@ void initMpv(DynamicLibrary lib) {
   _create = lib.lookupFunction<_CreateC, _CreateFn>('mpv_create');
   _setOption = lib.lookupFunction<_SetOptionC, _SetOptionFn>('mpv_set_option_string');
   _setProperty = lib.lookupFunction<_SetPropertyC, _SetPropertyFn>('mpv_set_property_string');
-  _getProperty = lib.lookupFunction<_GetPropertyC, _GetPropertyFn>('mpv_get_property_string');
-  _free = lib.lookupFunction<_FreeC, _FreeFn>('mpv_free');
+  _observe = lib.lookupFunction<_ObserveC, _ObserveFn>('mpv_observe_property');
   _waitEvent = lib.lookupFunction<_WaitEventC, _WaitEventFn>('mpv_wait_event');
   _initialize = lib.lookupFunction<_InitC, _InitFn>('mpv_initialize');
   _command = lib.lookupFunction<_CommandC, _CommandFn>('mpv_command_string');
@@ -116,16 +137,64 @@ int setProperty(Pointer<Void> handle, String name, String value) {
   return code;
 }
 
-String? getProperty(Pointer<Void> handle, String name) {
+int observeProperty(Pointer<Void> handle, String name, int format) {
   final n = name.toNativeUtf8();
-  final v = _getProperty(handle, n);
+  final code = _observe(handle, 0, n, format);
   calloc.free(n);
-  if (v == nullptr) {
-    return null;
+  return code;
+}
+
+String formatPropValue(int format, Pointer<Void> data) {
+  if (format == flagFormat) {
+    return (data.cast<Int32>().value != 0).toString();
   }
-  final value = v.toDartString();
-  _free(v.cast());
-  return value;
+  if (format == doubleFormat) {
+    return data.cast<Double>().value.toString();
+  }
+  return data.address.toRadixString(16);
+}
+
+String describeEvent(MpvEvent event) {
+  if (event.id == propertyChangeEvent && event.data != nullptr) {
+    final prop = event.data.cast<MpvEventProperty>().ref;
+    return 'prop:${prop.name.toDartString()}=${formatPropValue(prop.format, prop.data)}';
+  }
+  return 'event:${eventNames[event.id] ?? event.id}';
+}
+
+bool waitForTrace(Pointer<Void> handle, bool Function() done, int timeoutSeconds) {
+  final deadline = DateTime.now().add(Duration(seconds: timeoutSeconds));
+  while (DateTime.now().isBefore(deadline)) {
+    final event = _waitEvent(handle, 0.5).ref;
+    if (event.id == shutdownEvent) {
+      eventTrace.add('event:shutdown');
+      return false;
+    }
+    if (event.id != noEvent) {
+      eventTrace.add(describeEvent(event));
+    }
+    if (done()) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool traceHas(String entry) {
+  return eventTrace.contains(entry);
+}
+
+bool traceHasPropGreaterThan(String name, double value) {
+  final prefix = 'prop:$name=';
+  for (final entry in eventTrace) {
+    if (entry.startsWith(prefix)) {
+      final parsed = double.tryParse(entry.substring(prefix.length));
+      if (parsed != null && parsed > value) {
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
 int loadFile(Pointer<Void> handle, String url) {
@@ -142,44 +211,16 @@ int stopPlayback(Pointer<Void> handle) {
   return code;
 }
 
-double? waitForDuration(Pointer<Void> handle, int timeoutSeconds) {
-  final deadline = DateTime.now().add(Duration(seconds: timeoutSeconds));
-  while (DateTime.now().isBefore(deadline)) {
-    final duration = double.tryParse(getProperty(handle, 'duration') ?? '');
-    if (duration != null && duration > 0) {
-      return duration;
-    }
-    sleep(const Duration(milliseconds: 200));
-  }
-  return null;
-}
-
-int waitForEvent(Pointer<Void> handle, int id, int timeoutSeconds) {
-  final deadline = DateTime.now().add(Duration(seconds: timeoutSeconds));
-  while (DateTime.now().isBefore(deadline)) {
-    final event = _waitEvent(handle, 0.5).ref;
-    if (event.id == id) {
-      return 0;
-    }
-    if (event.id == endFileEvent || event.id == shutdownEvent) {
-      return -1;
-    }
-  }
-  return -2;
-}
-
-int waitForIdle(Pointer<Void> handle, int timeoutSeconds) {
-  final deadline = DateTime.now().add(Duration(seconds: timeoutSeconds));
-  while (DateTime.now().isBefore(deadline)) {
-    if (getProperty(handle, 'idle-active') == 'yes') {
-      return 0;
-    }
-    sleep(const Duration(milliseconds: 200));
-  }
-  return -1;
+int failPlayback(Pointer<Void> handle, int code) {
+  final from = eventTrace.length > 40 ? eventTrace.length - 40 : 0;
+  // ignore: avoid_print
+  print(eventTrace.sublist(from).join('\n'));
+  mpvDestroy(handle);
+  return code;
 }
 
 Future<int> checkPlayback(String url) async {
+  eventTrace.clear();
   initMpv(openMpv());
   if (mpvVersion() <= 0) {
     return 1;
@@ -200,36 +241,43 @@ Future<int> checkPlayback(String url) async {
   if (mpvInitialize(handle) != 0) {
     return 6;
   }
+  if (observeProperty(handle, 'pause', flagFormat) != 0 ||
+      observeProperty(handle, 'idle-active', flagFormat) != 0 ||
+      observeProperty(handle, 'eof-reached', flagFormat) != 0 ||
+      observeProperty(handle, 'duration', doubleFormat) != 0 ||
+      observeProperty(handle, 'time-pos', doubleFormat) != 0) {
+    return failPlayback(handle, 7);
+  }
   if (loadFile(handle, url) != 0) {
-    return 7;
+    return failPlayback(handle, 8);
   }
-  if (waitForEvent(handle, startFileEvent, 45) != 0) {
-    return 8;
+  if (!waitForTrace(handle, () => traceHas('event:start-file'), 45)) {
+    return failPlayback(handle, 9);
   }
-  if (waitForEvent(handle, playbackRestartEvent, 45) != 0) {
-    return 9;
+  if (!waitForTrace(handle, () => traceHas('event:playback-restart'), 45)) {
+    return failPlayback(handle, 10);
   }
-  if (waitForDuration(handle, 15) == null) {
-    return 10;
+  if (eventTrace.indexOf('event:start-file') > eventTrace.indexOf('event:playback-restart')) {
+    return failPlayback(handle, 11);
   }
-  final first = double.tryParse(getProperty(handle, 'time-pos') ?? '');
-  if (first == null || first < 0) {
-    return 11;
+  if (!waitForTrace(handle, () => traceHasPropGreaterThan('duration', 0), 15)) {
+    return failPlayback(handle, 12);
   }
-  await Future<void>.delayed(const Duration(seconds: 2));
-  final second = double.tryParse(getProperty(handle, 'time-pos') ?? '');
-  if (second != null && second < first) {
-    return 11;
+  if (!waitForTrace(handle, () => traceHasPropGreaterThan('time-pos', 1), 30)) {
+    return failPlayback(handle, 13);
   }
-  if (setProperty(handle, 'pause', 'yes') != 0 || getProperty(handle, 'pause') != 'yes') {
-    return 12;
+  if (setProperty(handle, 'pause', 'yes') != 0 ||
+      !waitForTrace(handle, () => traceHas('prop:pause=true'), 10)) {
+    return failPlayback(handle, 14);
   }
-  if (setProperty(handle, 'pause', 'no') != 0 || getProperty(handle, 'pause') != 'no') {
-    return 13;
+  if (setProperty(handle, 'pause', 'no') != 0 ||
+      !waitForTrace(handle, () => traceHas('prop:pause=false'), 10)) {
+    return failPlayback(handle, 15);
   }
   stopPlayback(handle);
-  if (waitForIdle(handle, 10) != 0) {
-    return 14;
+  if (!waitForTrace(
+      handle, () => traceHas('prop:idle-active=true') || traceHas('event:end-file'), 10)) {
+    return failPlayback(handle, 16);
   }
   mpvDestroy(handle);
   return 0;
