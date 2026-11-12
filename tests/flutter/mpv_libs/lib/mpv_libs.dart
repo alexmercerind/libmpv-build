@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:ffi';
 import 'dart:io';
 import 'package:ffi/ffi.dart';
@@ -209,76 +208,4 @@ int stopPlayback(Pointer<Void> handle) {
   final code = _command(handle, args);
   calloc.free(args);
   return code;
-}
-
-int failPlayback(Pointer<Void> handle, int code) {
-  final from = eventTrace.length > 40 ? eventTrace.length - 40 : 0;
-  // ignore: avoid_print
-  print(eventTrace.sublist(from).join('\n'));
-  mpvDestroy(handle);
-  return code;
-}
-
-Future<int> checkPlayback(String url) async {
-  eventTrace.clear();
-  initMpv(openMpv());
-  if (mpvVersion() <= 0) {
-    return 1;
-  }
-  final handle = mpvCreate();
-  if (handle == nullptr) {
-    return 2;
-  }
-  if (setString(handle, 'vo', 'null') != 0) {
-    return 3;
-  }
-  if (setString(handle, 'ao', 'null') != 0) {
-    return 4;
-  }
-  if (setString(handle, 'idle', 'yes') != 0) {
-    return 5;
-  }
-  if (mpvInitialize(handle) != 0) {
-    return 6;
-  }
-  if (observeProperty(handle, 'pause', flagFormat) != 0 ||
-      observeProperty(handle, 'idle-active', flagFormat) != 0 ||
-      observeProperty(handle, 'eof-reached', flagFormat) != 0 ||
-      observeProperty(handle, 'duration', doubleFormat) != 0 ||
-      observeProperty(handle, 'time-pos', doubleFormat) != 0) {
-    return failPlayback(handle, 7);
-  }
-  if (loadFile(handle, url) != 0) {
-    return failPlayback(handle, 8);
-  }
-  if (!waitForTrace(handle, () => traceHas('event:start-file'), 45)) {
-    return failPlayback(handle, 9);
-  }
-  if (!waitForTrace(handle, () => traceHas('event:playback-restart'), 45)) {
-    return failPlayback(handle, 10);
-  }
-  if (eventTrace.indexOf('event:start-file') > eventTrace.indexOf('event:playback-restart')) {
-    return failPlayback(handle, 11);
-  }
-  if (!waitForTrace(handle, () => traceHasPropGreaterThan('duration', 0), 15)) {
-    return failPlayback(handle, 12);
-  }
-  if (!waitForTrace(handle, () => traceHasPropGreaterThan('time-pos', 1), 30)) {
-    return failPlayback(handle, 13);
-  }
-  if (setProperty(handle, 'pause', 'yes') != 0 ||
-      !waitForTrace(handle, () => traceHas('prop:pause=true'), 10)) {
-    return failPlayback(handle, 14);
-  }
-  if (setProperty(handle, 'pause', 'no') != 0 ||
-      !waitForTrace(handle, () => traceHas('prop:pause=false'), 10)) {
-    return failPlayback(handle, 15);
-  }
-  stopPlayback(handle);
-  if (!waitForTrace(
-      handle, () => traceHas('prop:idle-active=true') || traceHas('event:end-file'), 10)) {
-    return failPlayback(handle, 16);
-  }
-  mpvDestroy(handle);
-  return 0;
 }
