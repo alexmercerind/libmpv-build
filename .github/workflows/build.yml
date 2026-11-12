@@ -5,6 +5,12 @@ on:
   pull_request:
   workflow_call:
 
+# Pushes to a branch with an open PR would otherwise build the full matrix
+# twice (push + pull_request). Same ref => the newer run wins.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build_audio:
     strategy:
@@ -66,14 +72,14 @@ jobs:
           export PATH="$PWD/.venv/bin:$PATH"
           .venv/bin/python build.py ${{ matrix.target }} audio
       - name: Upload Prod Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: libmpv-${{ matrix.target }}-audio
           path: |
             dist/*
             !dist/*-debug.*
       - name: Upload Debug Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: libmpv-${{ matrix.target }}-audio-debug
           path: dist/*-debug.*
@@ -138,14 +144,14 @@ jobs:
           export PATH="$PWD/.venv/bin:$PATH"
           .venv/bin/python build.py ${{ matrix.target }} audio
       - name: Upload Prod Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: libmpv-${{ matrix.target }}-audio
           path: |
             dist/*
             !dist/*-debug.*
       - name: Upload Debug Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: libmpv-${{ matrix.target }}-audio-debug
           path: dist/*-debug.*
