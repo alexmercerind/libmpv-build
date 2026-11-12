@@ -3,7 +3,7 @@ import 'dart:ffi';
 import 'dart:io';
 import 'package:ffi/ffi.dart';
 
-const testUrl = 'https://upload.wikimedia.org/wikipedia/commons/1/1a/Aaron_Dunn_-_Minuet_-_Notebook_for_Anna_Magdalena.ogg';
+const testUrl = 'https://user-images.githubusercontent.com/28951144/229373709-603a7a89-2105-4e1b-a5a5-a6c3567c9a59.mp4';
 
 typedef _VersionC = Int32 Function();
 typedef _CreateC = Pointer<Void> Function();
