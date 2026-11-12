@@ -1,15 +1,9 @@
 name: Build
 on:
   push:
-    branches: [main, audio-builds]
+    branches: [main]
   pull_request:
   workflow_call:
-
-# Pushes to a branch with an open PR would otherwise build the full matrix
-# twice (push + pull_request). Same ref => the newer run wins.
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
 
 jobs:
   build_audio:
