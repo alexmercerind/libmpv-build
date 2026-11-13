@@ -1,31 +1,33 @@
 import 'dart:ffi';
+import 'dart:io';
 
 import 'package:ffi/ffi.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:mpv_libs/ffmpeg_libs.dart';
 
-const kTestUrl = 'https://user-images.githubusercontent.com/28951144/229373709-603a7a89-2105-4e1b-a5a6-c3567c9a59.mp4';
+const kAssetPath = 'assets/tone.mp3';
 const kMinFrames = 5;
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('url audio decode: version, open, frames', (tester) async {
+  testWidgets('asset audio decode: version, open, frames', (tester) async {
     ffmpegInit(ffmpegOpen());
 
     expect(avVersionInfo(), isNotEmpty);
     expect(avcodecVersion(), greaterThan(0));
 
+    final dir = await Directory.systemTemp.createTemp('ffmpeg_test');
+    addTearDown(() => dir.delete(recursive: true));
+    final file = File('${dir.path}/tone.mp3');
+    final asset = await rootBundle.load(kAssetPath);
+    await file.writeAsBytes(asset.buffer.asUint8List());
+
     final ctxPtr = calloc<Pointer<AvFormatContext>>();
     addTearDown(() => calloc.free(ctxPtr));
-
-    // Same user agent mpv sends; the default Lavf agent is refused the clip.
-    final optionsPtr = calloc<Pointer<Void>>();
-    addTearDown(() => calloc.free(optionsPtr));
-    expect(avDictSet(optionsPtr, 'user_agent', 'libmpv'), 0);
-    expect(avformatOpenInput(ctxPtr, kTestUrl, optionsPtr), 0);
-    avDictFree(optionsPtr);
+    expect(avformatOpenInput(ctxPtr, file.path), 0);
 
     final fmt = ctxPtr.value;
     expect(fmt, isNot(nullptr));
@@ -73,5 +75,5 @@ void main() {
     }
     expect(frames, kMinFrames);
     expect(samples, greaterThan(0));
-  }, timeout: const Timeout(Duration(minutes: 3)));
+  });
 }

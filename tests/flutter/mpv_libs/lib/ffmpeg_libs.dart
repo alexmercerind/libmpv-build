@@ -9,12 +9,8 @@ typedef _AvVersionInfoC = Pointer<Utf8> Function();
 typedef _AvVersionInfoFn = Pointer<Utf8> Function();
 typedef _AvcodecVersionC = Uint32 Function();
 typedef _AvcodecVersionFn = int Function();
-typedef _AvDictSetC = Int32 Function(Pointer<Pointer<Void>>, Pointer<Utf8>, Pointer<Utf8>, Int32);
-typedef _AvDictSetFn = int Function(Pointer<Pointer<Void>>, Pointer<Utf8>, Pointer<Utf8>, int);
-typedef _AvDictFreeC = Void Function(Pointer<Pointer<Void>>);
-typedef _AvDictFreeFn = void Function(Pointer<Pointer<Void>>);
-typedef _AvformatOpenInputC = Int32 Function(Pointer<Pointer<AvFormatContext>>, Pointer<Utf8>, Pointer<Void>, Pointer<Pointer<Void>>);
-typedef _AvformatOpenInputFn = int Function(Pointer<Pointer<AvFormatContext>>, Pointer<Utf8>, Pointer<Void>, Pointer<Pointer<Void>>);
+typedef _AvformatOpenInputC = Int32 Function(Pointer<Pointer<AvFormatContext>>, Pointer<Utf8>, Pointer<Void>, Pointer<Void>);
+typedef _AvformatOpenInputFn = int Function(Pointer<Pointer<AvFormatContext>>, Pointer<Utf8>, Pointer<Void>, Pointer<Void>);
 typedef _AvformatFindStreamInfoC = Int32 Function(Pointer<AvFormatContext>, Pointer<Void>);
 typedef _AvformatFindStreamInfoFn = int Function(Pointer<AvFormatContext>, Pointer<Void>);
 typedef _AvFindBestStreamC = Int32 Function(Pointer<AvFormatContext>, Int32, Int32, Int32, Pointer<Pointer<Void>>, Int32);
@@ -125,8 +121,6 @@ final class AvFrame extends Struct {
 
 late final _AvVersionInfoFn _avVersionInfo;
 late final _AvcodecVersionFn _avcodecVersion;
-late final _AvDictSetFn _avDictSet;
-late final _AvDictFreeFn _avDictFree;
 late final _AvformatOpenInputFn _avformatOpenInput;
 late final _AvformatFindStreamInfoFn _avformatFindStreamInfo;
 late final _AvFindBestStreamFn _avFindBestStream;
@@ -154,8 +148,6 @@ DynamicLibrary ffmpegOpen() {
 void ffmpegInit(DynamicLibrary lib) {
   _avVersionInfo = lib.lookupFunction<_AvVersionInfoC, _AvVersionInfoFn>('av_version_info');
   _avcodecVersion = lib.lookupFunction<_AvcodecVersionC, _AvcodecVersionFn>('avcodec_version');
-  _avDictSet = lib.lookupFunction<_AvDictSetC, _AvDictSetFn>('av_dict_set');
-  _avDictFree = lib.lookupFunction<_AvDictFreeC, _AvDictFreeFn>('av_dict_free');
   _avformatOpenInput = lib.lookupFunction<_AvformatOpenInputC, _AvformatOpenInputFn>('avformat_open_input');
   _avformatFindStreamInfo = lib.lookupFunction<_AvformatFindStreamInfoC, _AvformatFindStreamInfoFn>('avformat_find_stream_info');
   _avFindBestStream = lib.lookupFunction<_AvFindBestStreamC, _AvFindBestStreamFn>('av_find_best_stream');
@@ -182,22 +174,9 @@ int avcodecVersion() {
   return _avcodecVersion();
 }
 
-int avDictSet(Pointer<Pointer<Void>> dict, String key, String value) {
-  final k = key.toNativeUtf8();
-  final v = value.toNativeUtf8();
-  final code = _avDictSet(dict, k, v, 0);
-  calloc.free(k);
-  calloc.free(v);
-  return code;
-}
-
-void avDictFree(Pointer<Pointer<Void>> dict) {
-  _avDictFree(dict);
-}
-
-int avformatOpenInput(Pointer<Pointer<AvFormatContext>> handle, String url, Pointer<Pointer<Void>> options) {
+int avformatOpenInput(Pointer<Pointer<AvFormatContext>> handle, String url) {
   final u = url.toNativeUtf8();
-  final code = _avformatOpenInput(handle, u, nullptr, options);
+  final code = _avformatOpenInput(handle, u, nullptr, nullptr);
   calloc.free(u);
   return code;
 }
