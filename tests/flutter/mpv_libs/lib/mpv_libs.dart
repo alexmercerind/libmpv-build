@@ -96,8 +96,6 @@ const endFileReasons = <int, String>{
   5: 'redirect',
 };
 
-final List<String> eventTrace = [];
-
 late final _VersionFn _version;
 late final _CreateFn _create;
 late final _SetOptionFn _setOption;
@@ -216,52 +214,22 @@ String? describeEvent(MpvEvent event) {
   return 'event:${eventNames[event.id] ?? event.id}';
 }
 
-bool waitForTrace(
-  Pointer<Void> handle,
-  bool Function() done,
-  int timeoutSeconds, {
-  void Function(String entry)? onEvent,
-}) {
-  final deadline = DateTime.now().add(Duration(seconds: timeoutSeconds));
-  while (DateTime.now().isBefore(deadline)) {
+Stream<String> watchEvents(Pointer<Void> handle, List<String> trace) async* {
+  while (true) {
     final event = _waitEvent(handle, 0.5).ref;
     if (event.id == shutdownEvent) {
-      eventTrace.add('event:shutdown');
-      return false;
+      trace.add('event:shutdown');
+      return;
     }
-    if (event.id != noEvent) {
-      final described = describeEvent(event);
-      if (described != null) {
-        eventTrace.add(described);
-        onEvent?.call(described);
-      }
+    if (event.id == noEvent) {
+      continue;
     }
-    if (done()) {
-      return true;
+    final described = describeEvent(event);
+    if (described != null) {
+      trace.add(described);
+      yield described;
     }
   }
-  return false;
-}
-
-bool traceHas(String entry) {
-  return eventTrace.contains(entry);
-}
-
-bool traceHasPrefix(String prefix) {
-  return eventTrace.any((entry) => entry.startsWith(prefix));
-}
-
-bool traceHasPropGreaterThan(String name, double value) {
-  final prefix = 'prop:$name=';
-  for (final entry in eventTrace) {
-    if (entry.startsWith(prefix)) {
-      final parsed = double.tryParse(entry.substring(prefix.length));
-      if (parsed != null && parsed > value) {
-        return true;
-      }
-    }
-  }
-  return false;
 }
 
 int loadFile(Pointer<Void> handle, String url) {

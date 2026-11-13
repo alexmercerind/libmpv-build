@@ -12,6 +12,7 @@ dependencies:
     path: mpv_libs
 
 dev_dependencies:
+  async: ^2.13.1
   flutter_test:
     sdk: flutter
   integration_test:
