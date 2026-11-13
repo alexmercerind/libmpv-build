@@ -18,6 +18,7 @@ Future<Pointer<Void>> startPlayback() async {
   expect(observeProperty(handle, 'eof-reached', flagFormat), equals(0));
   expect(observeProperty(handle, 'duration', doubleFormat), equals(0));
   expect(observeProperty(handle, 'time-pos', doubleFormat), equals(0));
+  expect(requestLogMessages(handle, 'warn'), equals(0));
   expect(loadFile(handle, testUrl), equals(0));
   expect(
     waitForTrace(handle, () => traceHas('event:start-file'), 45),

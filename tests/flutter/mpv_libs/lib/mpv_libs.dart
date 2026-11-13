@@ -9,6 +9,7 @@ typedef _CreateC = Pointer<Void> Function();
 typedef _SetOptionC = Int32 Function(Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>);
 typedef _SetPropertyC = Int32 Function(Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>);
 typedef _ObserveC = Int32 Function(Pointer<Void>, Uint64, Pointer<Utf8>, Int32);
+typedef _RequestLogC = Int32 Function(Pointer<Void>, Pointer<Utf8>);
 typedef _WaitEventC = Pointer<MpvEvent> Function(Pointer<Void>, Double);
 typedef _InitC = Int32 Function(Pointer<Void>);
 typedef _CommandC = Int32 Function(Pointer<Void>, Pointer<Utf8>);
@@ -19,6 +20,7 @@ typedef _CreateFn = Pointer<Void> Function();
 typedef _SetOptionFn = int Function(Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>);
 typedef _SetPropertyFn = int Function(Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>);
 typedef _ObserveFn = int Function(Pointer<Void>, int, Pointer<Utf8>, int);
+typedef _RequestLogFn = int Function(Pointer<Void>, Pointer<Utf8>);
 typedef _WaitEventFn = Pointer<MpvEvent> Function(Pointer<Void>, double);
 typedef _InitFn = int Function(Pointer<Void>);
 typedef _CommandFn = int Function(Pointer<Void>, Pointer<Utf8>);
@@ -54,8 +56,20 @@ final class MpvEventEndFile extends Struct {
   external int error;
 }
 
+final class MpvEventLogMessage extends Struct {
+  external Pointer<Utf8> prefix;
+
+  external Pointer<Utf8> level;
+
+  external Pointer<Utf8> text;
+
+  @Int32()
+  external int logLevel;
+}
+
 const noEvent = 0;
 const shutdownEvent = 1;
+const logMessageEvent = 2;
 const startFileEvent = 6;
 const endFileEvent = 7;
 const playbackRestartEvent = 21;
@@ -66,6 +80,7 @@ const doubleFormat = 5;
 const eventNames = <int, String>{
   0: 'none',
   1: 'shutdown',
+  2: 'log-message',
   6: 'start-file',
   7: 'end-file',
   8: 'file-loaded',
@@ -88,6 +103,7 @@ late final _CreateFn _create;
 late final _SetOptionFn _setOption;
 late final _SetPropertyFn _setProperty;
 late final _ObserveFn _observe;
+late final _RequestLogFn _requestLog;
 late final _WaitEventFn _waitEvent;
 late final _InitFn _initialize;
 late final _CommandFn _command;
@@ -112,6 +128,7 @@ void initMpv(DynamicLibrary lib) {
   _setOption = lib.lookupFunction<_SetOptionC, _SetOptionFn>('mpv_set_option_string');
   _setProperty = lib.lookupFunction<_SetPropertyC, _SetPropertyFn>('mpv_set_property_string');
   _observe = lib.lookupFunction<_ObserveC, _ObserveFn>('mpv_observe_property');
+  _requestLog = lib.lookupFunction<_RequestLogC, _RequestLogFn>('mpv_request_log_messages');
   _waitEvent = lib.lookupFunction<_WaitEventC, _WaitEventFn>('mpv_wait_event');
   _initialize = lib.lookupFunction<_InitC, _InitFn>('mpv_initialize');
   _command = lib.lookupFunction<_CommandC, _CommandFn>('mpv_command_string');
@@ -159,6 +176,13 @@ int observeProperty(Pointer<Void> handle, String name, int format) {
   return code;
 }
 
+int requestLogMessages(Pointer<Void> handle, String minLevel) {
+  final l = minLevel.toNativeUtf8();
+  final code = _requestLog(handle, l);
+  calloc.free(l);
+  return code;
+}
+
 String formatPropValue(int format, Pointer<Void> data) {
   if (format == flagFormat) {
     return (data.cast<Int32>().value != 0).toString();
@@ -169,7 +193,7 @@ String formatPropValue(int format, Pointer<Void> data) {
   return data.address.toRadixString(16);
 }
 
-String describeEvent(MpvEvent event) {
+String? describeEvent(MpvEvent event) {
   if (event.id == propertyChangeEvent && event.data != nullptr) {
     final prop = event.data.cast<MpvEventProperty>().ref;
     return 'prop:${prop.name.toDartString()}=${formatPropValue(prop.format, prop.data)}';
@@ -181,6 +205,13 @@ String describeEvent(MpvEvent event) {
       return 'event:end-file:$reason:${end.error}';
     }
     return 'event:end-file:$reason';
+  }
+  if (event.id == logMessageEvent && event.data != nullptr) {
+    final log = event.data.cast<MpvEventLogMessage>().ref;
+    if (log.logLevel <= 30) {
+      return 'log:${log.prefix.toDartString()}:${log.text.toDartString().trim()}';
+    }
+    return null;
   }
   return 'event:${eventNames[event.id] ?? event.id}';
 }
@@ -194,7 +225,10 @@ bool waitForTrace(Pointer<Void> handle, bool Function() done, int timeoutSeconds
       return false;
     }
     if (event.id != noEvent) {
-      eventTrace.add(describeEvent(event));
+      final described = describeEvent(event);
+      if (described != null) {
+        eventTrace.add(described);
+      }
     }
     if (done()) {
       return true;
