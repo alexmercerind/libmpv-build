@@ -144,6 +144,7 @@ class Dependency:
     sha256: str
     tool: BuildTool
     dependencies: list[str]
+    os: Optional[list[str]] = None
 
 
 # ----------------------------------------------------------------------------
@@ -237,6 +238,8 @@ def main() -> int:
     shutil.rmtree(prefix, ignore_errors=True)
     build_env = get_target_env(base, build_target, prefix)
     for dependency in dependencies:
+        if dependency.os is not None and build_target.build_os.value not in dependency.os:
+            continue
         print(f"building {dependency.name}", flush=True)
         build_dependency(base, dependency, build_target, build_variant, cross_file, prefix, build_env)
     split_debug(prefix, build_target, build_env)
@@ -267,6 +270,7 @@ def get_dependencies(base: Path) -> list[Dependency]:
             sha256=item["sha256"],
             tool=tool,
             dependencies=item["dependencies"],
+            os=item.get("os"),
         )
     for name, entry in entries.items():
         for edge in entry.dependencies:
