@@ -55,14 +55,17 @@ jobs:
           gh run download "${{ needs.setup.outputs.run-id }}" --repo "$GITHUB_REPOSITORY" --name "libmpv-linux-x86_64-audio" --dir artifacts/linux
           unzip -o -q artifacts/linux/libmpv_linux_x86_64_audio.zip -d staged/linux
           cp staged/linux/lib/libmpv.so* tests/flutter/mpv_libs/linux/native/
+      - name: Verify mimalloc
+        run: |
+          nm -D staged/linux/lib/libmpv.so | grep -q " T malloc"
+          cc tests/link/mpv.c -Istaged/linux/include -Lstaged/linux/lib -lmpv -o /tmp/mpv_check
+          MIMALLOC_VERBOSE=1 LD_LIBRARY_PATH=$PWD/staged/linux/lib /tmp/mpv_check 2>&1 | tee /tmp/mimalloc.log
+          grep -qi "mimalloc" /tmp/mimalloc.log
       - name: Run Playback Test
-        env:
-          MIMALLOC_VERBOSE: 1
         run: |
           flutter pub get
           export LD_LIBRARY_PATH=$PWD/mpv_libs/linux/native
-          xvfb-run -a flutter test integration_test/mpv_test.dart -d linux 2>&1 | tee /tmp/flutter-test.log
-          grep -qi "mimalloc" /tmp/flutter-test.log
+          xvfb-run -a flutter test integration_test/mpv_test.dart -d linux
         working-directory: tests/flutter
 
   test_macos:
