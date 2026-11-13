@@ -3,8 +3,6 @@
 -Davfoundation=enabled
 -Dcoreaudio=enabled
 
-# cocoa stays off: it needs swift-build headers; utils-mac.c comes via patch.
-
 # sdk features
 
 -Dmacos-10-15-4-features=enabled
