@@ -1,4 +1,4 @@
-name: libmpv_check
+name: mpv_test
 publish_to: none
 version: 1.0.0+1
 
@@ -12,6 +12,7 @@ dependencies:
     path: mpv_libs
 
 dev_dependencies:
+  async: ^2.13.1
   flutter_test:
     sdk: flutter
   integration_test:

@@ -1,4 +1,4 @@
-package io.mpv.libmpv_check
+package io.mpv.mpv_test
 
 import io.flutter.embedding.android.FlutterActivity
 

@@ -168,3 +168,56 @@ jobs:
     uses: ./.github/workflows/test.yml
     with:
       run-id: ${{ github.run_id }}
+
+  combine_darwin:
+    needs: build_audio
+    runs-on: macos-15
+    name: Combine universal macOS/iOS
+    steps:
+      - name: Check Out Code
+        uses: actions/checkout@v5
+      - name: Download macOS arm64 slice
+        uses: actions/download-artifact@v6
+        with:
+          name: libmpv-macos-arm64-audio
+          path: ${{ runner.temp }}/slices/macos-arm64
+      - name: Download macOS amd64 slice
+        uses: actions/download-artifact@v6
+        with:
+          name: libmpv-macos-amd64-audio
+          path: ${{ runner.temp }}/slices/macos-amd64
+      - name: Download iOS arm64 slice
+        uses: actions/download-artifact@v6
+        with:
+          name: libmpv-ios-arm64-audio
+          path: ${{ runner.temp }}/slices/ios-arm64
+      - name: Download iOS simulator arm64 slice
+        uses: actions/download-artifact@v6
+        with:
+          name: libmpv-ios-simulator-arm64-audio
+          path: ${{ runner.temp }}/slices/ios-simulator-arm64
+      - name: Download iOS simulator amd64 slice
+        uses: actions/download-artifact@v6
+        with:
+          name: libmpv-ios-simulator-amd64-audio
+          path: ${{ runner.temp }}/slices/ios-simulator-amd64
+      - name: Build universal xcframeworks
+        run: scripts/combine-darwin.sh "${{ runner.temp }}/slices" "${{ runner.temp }}/combine"
+      - name: Upload macOS universal artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: libmpv-macos-universal-audio
+          path: ${{ runner.temp }}/combine/libmpv_macos_universal_audio.zip
+      - name: Upload iOS universal artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: libmpv-ios-universal-audio
+          path: ${{ runner.temp }}/combine/libmpv_ios_universal_audio.zip
+      - name: Publish Release
+        uses: softprops/action-gh-release@v2
+        if: github.ref == 'refs/heads/master'
+        with:
+          draft: true
+          prerelease: false
+          tag_name: vnext
+          files: ${{ runner.temp }}/combine/*.zip

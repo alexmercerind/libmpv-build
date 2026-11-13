@@ -1,0 +1,14 @@
+--- a/meson.build
++++ b/meson.build
+@@ -882,6 +882,11 @@
+                      'audio/out/ao_coreaudio_utils.c')
+ endif
+ 
++# utils-mac.c is needed by the Apple audio outputs even when cocoa is off.
++if (features['audiounit'] or features['coreaudio'] or features['avfoundation']) and not features['cocoa']
++    sources += files('osdep/utils-mac.c')
++endif
++
+ if features['avfoundation']
+     sources += files('audio/out/ao_coreaudio_properties.c')
+ endif

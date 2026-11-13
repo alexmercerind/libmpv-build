@@ -1,3 +1,6 @@
 analyzer:
   language:
     strict-casts: true
+
+formatter:
+  page_width: 200

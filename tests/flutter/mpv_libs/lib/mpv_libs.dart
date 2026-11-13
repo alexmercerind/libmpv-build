@@ -1,107 +1,121 @@
-import 'dart:async';
 import 'dart:ffi';
 import 'dart:io';
+
 import 'package:ffi/ffi.dart';
 
-const testUrl = 'https://upload.wikimedia.org/wikipedia/commons/1/1a/Aaron_Dunn_-_Minuet_-_Notebook_for_Anna_Magdalena.ogg';
+const kEventPlaybackRestart = 21;
+const kEventPropertyChange = 22;
+const kFormatFlag = 3;
+const kFormatDouble = 5;
 
-typedef _VersionC = Int32 Function();
-typedef _CreateC = Pointer<Void> Function();
-typedef _SetOptionC = Int32 Function(Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>);
-typedef _InitC = Int32 Function(Pointer<Void>);
-typedef _CommandC = Int32 Function(Pointer<Void>, Pointer<Utf8>);
-typedef _DestroyC = Void Function(Pointer<Void>);
+typedef _MpvCommandC = Int32 Function(Pointer<Void>, Pointer<Utf8>);
+typedef _MpvCommandFn = int Function(Pointer<Void>, Pointer<Utf8>);
+typedef _MpvCreateC = Pointer<Void> Function();
+typedef _MpvCreateFn = Pointer<Void> Function();
+typedef _MpvDestroyC = Void Function(Pointer<Void>);
+typedef _MpvDestroyFn = void Function(Pointer<Void>);
+typedef _MpvInitializeC = Int32 Function(Pointer<Void>);
+typedef _MpvInitializeFn = int Function(Pointer<Void>);
+typedef _MpvObserveC = Int32 Function(Pointer<Void>, Uint64, Pointer<Utf8>, Int32);
+typedef _MpvObserveFn = int Function(Pointer<Void>, int, Pointer<Utf8>, int);
+typedef _MpvOptionC = Int32 Function(Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>);
+typedef _MpvOptionFn = int Function(Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>);
+typedef _MpvWaitC = Pointer<MpvEvent> Function(Pointer<Void>, Double);
+typedef _MpvWaitFn = Pointer<MpvEvent> Function(Pointer<Void>, double);
 
-typedef _VersionFn = int Function();
-typedef _CreateFn = Pointer<Void> Function();
-typedef _SetOptionFn = int Function(Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>);
-typedef _InitFn = int Function(Pointer<Void>);
-typedef _CommandFn = int Function(Pointer<Void>, Pointer<Utf8>);
-typedef _DestroyFn = void Function(Pointer<Void>);
+final class MpvEvent extends Struct {
+  @Int32()
+  external int id;
 
-late final _VersionFn _version;
-late final _CreateFn _create;
-late final _SetOptionFn _setOption;
-late final _InitFn _initialize;
-late final _CommandFn _command;
-late final _DestroyFn _destroy;
+  @Int32()
+  external int error;
 
-DynamicLibrary openMpv() {
-  if (Platform.isAndroid) {
-    return DynamicLibrary.open('libmpv.so');
-  }
-  if (Platform.isIOS || Platform.isMacOS) {
-    return DynamicLibrary.process();
-  }
-  if (Platform.isWindows) {
-    return DynamicLibrary.open('libmpv-2.dll');
-  }
+  @Uint64()
+  external int replyUserdata;
+
+  external Pointer<Void> data;
+}
+
+final class MpvEventProperty extends Struct {
+  external Pointer<Utf8> name;
+
+  @Int32()
+  external int format;
+
+  external Pointer<Void> data;
+}
+
+late final _MpvCommandFn _mpvCommand;
+late final _MpvCreateFn _mpvCreate;
+late final _MpvDestroyFn _mpvDestroy;
+late final _MpvInitializeFn _mpvInitialize;
+late final _MpvObserveFn _mpvObserve;
+late final _MpvOptionFn _mpvSetOption;
+late final _MpvOptionFn _mpvSetProperty;
+late final _MpvWaitFn _mpvWaitEvent;
+
+DynamicLibrary mpvOpen() {
+  if (Platform.isAndroid) return DynamicLibrary.open('libmpv.so');
+  if (Platform.isIOS || Platform.isMacOS) return DynamicLibrary.process();
+  if (Platform.isWindows) return DynamicLibrary.open('libmpv-2.dll');
   return DynamicLibrary.open('libmpv.so.2');
 }
 
-void initMpv(DynamicLibrary lib) {
-  _version = lib.lookupFunction<_VersionC, _VersionFn>('mpv_client_api_version');
-  _create = lib.lookupFunction<_CreateC, _CreateFn>('mpv_create');
-  _setOption = lib.lookupFunction<_SetOptionC, _SetOptionFn>('mpv_set_option_string');
-  _initialize = lib.lookupFunction<_InitC, _InitFn>('mpv_initialize');
-  _command = lib.lookupFunction<_CommandC, _CommandFn>('mpv_command_string');
-  _destroy = lib.lookupFunction<_DestroyC, _DestroyFn>('mpv_terminate_destroy');
+void mpvInit(DynamicLibrary lib) {
+  _mpvCommand = lib.lookupFunction<_MpvCommandC, _MpvCommandFn>('mpv_command_string');
+  _mpvCreate = lib.lookupFunction<_MpvCreateC, _MpvCreateFn>('mpv_create');
+  _mpvDestroy = lib.lookupFunction<_MpvDestroyC, _MpvDestroyFn>('mpv_terminate_destroy');
+  _mpvInitialize = lib.lookupFunction<_MpvInitializeC, _MpvInitializeFn>('mpv_initialize');
+  _mpvObserve = lib.lookupFunction<_MpvObserveC, _MpvObserveFn>('mpv_observe_property');
+  _mpvSetOption = lib.lookupFunction<_MpvOptionC, _MpvOptionFn>('mpv_set_option_string');
+  _mpvSetProperty = lib.lookupFunction<_MpvOptionC, _MpvOptionFn>('mpv_set_property_string');
+  _mpvWaitEvent = lib.lookupFunction<_MpvWaitC, _MpvWaitFn>('mpv_wait_event');
 }
 
-int mpvVersion() {
-  return _version();
+int mpvCommand(Pointer<Void> handle, String args) {
+  final c = args.toNativeUtf8();
+  final code = _mpvCommand(handle, c);
+  calloc.free(c);
+  return code;
 }
 
 Pointer<Void> mpvCreate() {
-  return _create();
-}
-
-int mpvInitialize(Pointer<Void> handle) {
-  return _initialize(handle);
+  return _mpvCreate();
 }
 
 void mpvDestroy(Pointer<Void> handle) {
-  _destroy(handle);
+  _mpvDestroy(handle);
 }
 
-int setString(Pointer<Void> handle, String name, String value) {
+int mpvInitialize(Pointer<Void> handle) {
+  return _mpvInitialize(handle);
+}
+
+int mpvObserveProperty(Pointer<Void> handle, String name, int format) {
+  final n = name.toNativeUtf8();
+  final code = _mpvObserve(handle, 0, n, format);
+  calloc.free(n);
+  return code;
+}
+
+int mpvSetOption(Pointer<Void> handle, String name, String value) {
   final n = name.toNativeUtf8();
   final v = value.toNativeUtf8();
-  final code = _setOption(handle, n, v);
+  final code = _mpvSetOption(handle, n, v);
   calloc.free(n);
   calloc.free(v);
   return code;
 }
 
-int loadFile(Pointer<Void> handle, String url) {
-  final args = 'loadfile $url replace'.toNativeUtf8();
-  final code = _command(handle, args);
-  calloc.free(args);
+int mpvSetProperty(Pointer<Void> handle, String name, String value) {
+  final n = name.toNativeUtf8();
+  final v = value.toNativeUtf8();
+  final code = _mpvSetProperty(handle, n, v);
+  calloc.free(n);
+  calloc.free(v);
   return code;
 }
 
-Future<int> checkPlayback(String url) async {
-  initMpv(openMpv());
-  if (mpvVersion() <= 0) {
-    return 1;
-  }
-  final handle = mpvCreate();
-  if (handle == nullptr) {
-    return 2;
-  }
-  if (setString(handle, 'vo', 'null') != 0) {
-    return 3;
-  }
-  if (setString(handle, 'ao', 'null') != 0) {
-    return 4;
-  }
-  if (mpvInitialize(handle) != 0) {
-    return 5;
-  }
-  if (loadFile(handle, url) != 0) {
-    return 6;
-  }
-  await Future<void>.delayed(const Duration(seconds: 15));
-  mpvDestroy(handle);
-  return 0;
+Pointer<MpvEvent> mpvWaitEvent(Pointer<Void> handle, [double timeout = -1]) {
+  return _mpvWaitEvent(handle, timeout);
 }
