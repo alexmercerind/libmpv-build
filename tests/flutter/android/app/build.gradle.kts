@@ -5,7 +5,7 @@ plugins {
 }
 
 android {
-    namespace = "io.mpv.libmpv_check"
+    namespace = "io.mpv.mpv_test"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -15,7 +15,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "io.mpv.libmpv_check"
+        applicationId = "io.mpv.mpv_test"
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode

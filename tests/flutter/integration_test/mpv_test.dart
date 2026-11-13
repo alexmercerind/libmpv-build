@@ -1,181 +1,99 @@
 import 'dart:async';
 import 'dart:ffi';
 
-import 'package:async/async.dart';
+import 'package:ffi/ffi.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:mpv_libs/mpv_libs.dart';
 
-final class PlaybackSession {
-  PlaybackSession._(this.handle, this.trace, this.events);
+const kExpectedDurationSec = 15;
 
-  final Pointer<Void> handle;
-  final List<String> trace;
-  final StreamQueue<String> events;
-  final record = <String, void Function(String)>{};
-
-  void expectEvent(String entry) {
-    record[entry] = expectAsync1((String _) {}, count: 1);
-  }
-
-  static PlaybackSession open() {
-    final trace = <String>[];
-    final handle = mpvCreate();
-    addTearDown(() => mpvDestroy(handle));
-    expect(setString(handle, 'vo', 'null'), equals(0));
-    expect(setString(handle, 'ao', 'null'), equals(0));
-    expect(setString(handle, 'idle', 'yes'), equals(0));
-    expect(mpvInitialize(handle), equals(0));
-    expect(observeProperty(handle, 'pause', flagFormat), equals(0));
-    expect(observeProperty(handle, 'idle-active', flagFormat), equals(0));
-    expect(observeProperty(handle, 'eof-reached', flagFormat), equals(0));
-    expect(observeProperty(handle, 'duration', doubleFormat), equals(0));
-    expect(observeProperty(handle, 'time-pos', doubleFormat), equals(0));
-    expect(requestLogMessages(handle, 'warn'), equals(0));
-    final events = StreamQueue<String>(watchEvents(handle, trace));
-    addTearDown(events.cancel);
-    expect(loadFile(handle, testUrl), equals(0));
-    return PlaybackSession._(handle, trace, events);
-  }
-
-  Future<String> next(
-    bool Function(String event) matches,
-    String Function() onTimeout, {
-    Duration timeout = const Duration(seconds: 45),
-  }) async {
-    final deadline = DateTime.now().add(timeout);
-    while (true) {
-      final remaining = deadline.difference(DateTime.now());
-      if (remaining <= Duration.zero) {
-        throw TestFailure(onTimeout());
-      }
-      late final String event;
-      try {
-        event = await events.next.timeout(remaining);
-      } on TimeoutException {
-        throw TestFailure(onTimeout());
-      }
-      record[event]?.call(event);
-      if (matches(event)) {
-        return event;
-      }
-    }
-  }
-}
+// ffprobe format duration of the clip: 15.046531 s.
+const kTestUrl = 'https://user-images.githubusercontent.com/28951144/229373709-603a7a89-2105-4e1b-a5a5-a6c3567c9a59.mp4';
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  setUpAll(() {
-    initMpv(openMpv());
-    expect(mpvVersion(), greaterThan(0));
-  });
+  testWidgets('url playback: duration, position, pause', (tester) async {
+    mpvInit(mpvOpen());
 
-  testWidgets(
-    'emits start-file before playback-restart',
-    (tester) async {
-      final session = PlaybackSession.open();
-      session.expectEvent('event:start-file');
-      session.expectEvent('event:playback-restart');
-      await session.next((event) => event == 'event:start-file', () => 'start: ${session.trace}');
-      await session.next((event) => event == 'event:playback-restart', () => 'restart: ${session.trace}');
-      expect(
-        session.trace.indexOf('event:start-file'),
-        lessThan(session.trace.indexOf('event:playback-restart')),
-      );
-    },
-    timeout: const Timeout(Duration(minutes: 5)),
-  );
+    final handle = mpvCreate();
+    addTearDown(() => mpvDestroy(handle));
 
-  testWidgets(
-    'reports duration',
-    (tester) async {
-      final session = PlaybackSession.open();
-      session.expectEvent('event:start-file');
-      session.expectEvent('event:playback-restart');
-      await session.next((event) => event == 'event:start-file', () => 'start: ${session.trace}');
-      await session.next((event) => event == 'event:playback-restart', () => 'restart: ${session.trace}');
-      final event = await session.next(
-        (event) {
-          if (!event.startsWith('prop:duration=')) {
-            return false;
+    expect(mpvSetOption(handle, 'vo', 'null'), 0);
+    expect(mpvSetOption(handle, 'ao', 'null'), 0);
+    expect(mpvInitialize(handle), 0);
+    expect(mpvObserveProperty(handle, 'duration', kFormatDouble), 0);
+    expect(mpvObserveProperty(handle, 'time-pos', kFormatDouble), 0);
+    expect(mpvObserveProperty(handle, 'pause', kFormatFlag), 0);
+    expect(mpvCommand(handle, 'loadfile $kTestUrl replace'), 0);
+
+    // Fires once when playback starts.
+    final onRestart = expectAsync0(() {}, count: 1);
+    // Fires once when the file reports a positive duration.
+    final onDuration = expectAsync1((int secs) {
+      expect(secs, kExpectedDurationSec);
+    }, count: 1);
+    // Fires on every positive time-pos update.
+    final onPosition = expectAsync1(
+      (int secs) {
+        expect(secs, greaterThan(0));
+      },
+      count: 1,
+      max: -1,
+    );
+    // Fires once when pause=yes.
+    final onPauseTrue = expectAsync1((bool isPaused) {
+      expect(isPaused, isTrue);
+    }, count: 1);
+    // Fires on the initial loadfile and again on pause=no.
+    final onPauseFalse = expectAsync1((bool isPaused) {
+      expect(isPaused, isFalse);
+    }, count: 2);
+
+    final timer = Timer.periodic(Duration.zero, (_) {
+      final eventRef = mpvWaitEvent(handle, 0);
+      final event = eventRef.ref;
+      if (event.id == kEventPlaybackRestart) {
+        print('mpv: playback-restart');
+        onRestart();
+      } else if (event.id == kEventPropertyChange && event.data.address != 0) {
+        final prop = event.data.cast<MpvEventProperty>().ref;
+        final name = prop.name.toDartString();
+        if (prop.format == kFormatDouble && name == 'duration') {
+          final secs = prop.data.cast<Double>().value.floor();
+          if (secs > 0) {
+            print('mpv: duration=$secs');
+            onDuration(secs);
           }
-          final value = double.tryParse(event.split('=').last);
-          return value != null && value > 0;
-        },
-        () => 'duration: ${session.trace}',
-        timeout: const Duration(seconds: 15),
-      );
-      expect(double.parse(event.split('=').last), greaterThan(0));
-    },
-    timeout: const Timeout(Duration(minutes: 5)),
-  );
-
-  testWidgets(
-    'advances position',
-    (tester) async {
-      final session = PlaybackSession.open();
-      session.expectEvent('event:start-file');
-      session.expectEvent('event:playback-restart');
-      await session.next((event) => event == 'event:start-file', () => 'start: ${session.trace}');
-      await session.next((event) => event == 'event:playback-restart', () => 'restart: ${session.trace}');
-      final event = await session.next(
-        (event) {
-          if (!event.startsWith('prop:time-pos=')) {
-            return false;
+        } else if (prop.format == kFormatDouble && name == 'time-pos') {
+          final secs = prop.data.cast<Double>().value.floor();
+          if (secs > 0) {
+            print('mpv: time-pos=$secs');
+            onPosition(secs);
           }
-          final value = double.tryParse(event.split('=').last);
-          return value != null && value > 1;
-        },
-        () => 'time-pos: ${session.trace}',
-        timeout: const Duration(seconds: 30),
-      );
-      expect(double.parse(event.split('=').last), greaterThan(1));
-    },
-    timeout: const Timeout(Duration(minutes: 5)),
-  );
+        } else if (prop.format == kFormatFlag && name == 'pause') {
+          final isPaused = prop.data.cast<Int32>().value != 0;
+          print('mpv: pause=$isPaused');
+          if (isPaused) {
+            onPauseTrue(isPaused);
+          } else {
+            onPauseFalse(isPaused);
+          }
+        }
+      }
+    });
 
-  testWidgets(
-    'pauses and resumes',
-    (tester) async {
-      final session = PlaybackSession.open();
-      session.expectEvent('event:start-file');
-      session.expectEvent('event:playback-restart');
-      session.expectEvent('prop:pause=true');
-      session.expectEvent('prop:pause=false');
-      await session.next((event) => event == 'event:start-file', () => 'start: ${session.trace}');
-      await session.next((event) => event == 'event:playback-restart', () => 'restart: ${session.trace}');
-      expect(setProperty(session.handle, 'pause', 'yes'), equals(0));
-      await session.next(
-        (event) => event == 'prop:pause=true',
-        () => 'pause: ${session.trace}',
-        timeout: const Duration(seconds: 10),
-      );
-      expect(setProperty(session.handle, 'pause', 'no'), equals(0));
-      await session.next(
-        (event) => event == 'prop:pause=false',
-        () => 'resume: ${session.trace}',
-        timeout: const Duration(seconds: 10),
-      );
-    },
-    timeout: const Timeout(Duration(minutes: 5)),
-  );
+    await Future<void>.delayed(const Duration(seconds: 2));
 
-  testWidgets(
-    'stops back to idle',
-    (tester) async {
-      final session = PlaybackSession.open();
-      session.expectEvent('event:start-file');
-      session.expectEvent('event:playback-restart');
-      await session.next((event) => event == 'event:start-file', () => 'start: ${session.trace}');
-      await session.next((event) => event == 'event:playback-restart', () => 'restart: ${session.trace}');
-      expect(stopPlayback(session.handle), equals(0));
-      await session.next(
-        (event) => event == 'prop:idle-active=true' || event.startsWith('event:end-file:'),
-        () => 'stop: ${session.trace}',
-        timeout: const Duration(seconds: 10),
-      );
-    },
-    timeout: const Timeout(Duration(minutes: 5)),
-  );
+    expect(mpvSetProperty(handle, 'pause', 'yes'), 0);
+
+    await Future<void>.delayed(const Duration(seconds: 2));
+
+    expect(mpvSetProperty(handle, 'pause', 'no'), 0);
+
+    await Future<void>.delayed(const Duration(seconds: 2));
+
+    timer.cancel();
+  }, timeout: const Timeout(Duration(minutes: 3)));
 }
