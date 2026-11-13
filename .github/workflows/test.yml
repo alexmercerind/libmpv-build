@@ -69,7 +69,6 @@ jobs:
         working-directory: tests/flutter
 
   test_macos:
-    if: false
     needs: setup
     runs-on: macos-15
     name: macOS
@@ -97,7 +96,6 @@ jobs:
         working-directory: tests/flutter
 
   test_windows:
-    if: false
     needs: setup
     runs-on: windows-latest
     name: Windows
@@ -125,7 +123,6 @@ jobs:
         working-directory: tests/flutter
 
   test_android:
-    if: false
     needs: setup
     runs-on: ubuntu-22.04
     name: Android
@@ -158,7 +155,6 @@ jobs:
           script: cd "$GITHUB_WORKSPACE/tests/flutter" && flutter pub get && flutter test integration_test/mpv_test.dart -d emulator-5554
 
   test_ios:
-    if: false
     needs: setup
     runs-on: macos-15
     name: iOS
