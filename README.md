@@ -106,6 +106,7 @@ Examples:
 | `libplacebo`     | `7.387.0` |
 | `libxml2`        | `2.15.4`  |
 | `mbedtls`        | `3.6.7`   |
+| `mimalloc`       | `3.6.1`   |
 | `mpv`            | `0.42.0`  |
 | `vulkan-headers` | `1.4.368` |
 | `zlib`           | `1.3.1`   |

@@ -34,6 +34,13 @@
   sha256: a7e8bcbec0e6f761b4af24f25677626b35f762f68eef79c08677a363212d11f6
   tool: cmake
   dependencies: []
+- name: mimalloc
+  version: 3.6.1
+  url: https://github.com/microsoft/mimalloc/archive/refs/tags/v3.6.1.tar.gz
+  sha256: 2672e6a99d4579fb4bb32d9de0d63aa424ce600d31fbfaf06eb74d940d2e07a6
+  tool: cmake
+  dependencies: []
+  os: [linux]
 - name: mpv
   version: 0.42.0
   url: https://github.com/mpv-player/mpv/archive/refs/tags/v0.42.0.tar.gz
