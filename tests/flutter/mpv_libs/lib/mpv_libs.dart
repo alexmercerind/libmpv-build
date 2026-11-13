@@ -216,7 +216,12 @@ String? describeEvent(MpvEvent event) {
   return 'event:${eventNames[event.id] ?? event.id}';
 }
 
-bool waitForTrace(Pointer<Void> handle, bool Function() done, int timeoutSeconds) {
+bool waitForTrace(
+  Pointer<Void> handle,
+  bool Function() done,
+  int timeoutSeconds, {
+  void Function(String entry)? onEvent,
+}) {
   final deadline = DateTime.now().add(Duration(seconds: timeoutSeconds));
   while (DateTime.now().isBefore(deadline)) {
     final event = _waitEvent(handle, 0.5).ref;
@@ -228,6 +233,7 @@ bool waitForTrace(Pointer<Void> handle, bool Function() done, int timeoutSeconds
       final described = describeEvent(event);
       if (described != null) {
         eventTrace.add(described);
+        onEvent?.call(described);
       }
     }
     if (done()) {

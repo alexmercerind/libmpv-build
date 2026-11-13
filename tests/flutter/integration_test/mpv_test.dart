@@ -4,11 +4,32 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:mpv_libs/mpv_libs.dart';
 
-Future<Pointer<Void>> startPlayback() async {
+final record = <String, void Function(String)>{};
+
+void expectEvent(String entry) {
+  record[entry] = expectAsync1((String _) {}, count: 1);
+}
+
+void pump(Pointer<Void> handle, bool Function() done, int seconds, String reason) {
+  expect(
+    waitForTrace(
+      handle,
+      done,
+      seconds,
+      onEvent: (event) => record[event]?.call(event),
+    ),
+    isTrue,
+    reason: '$reason: $eventTrace',
+  );
+}
+
+Pointer<Void> startPlayback() {
   eventTrace.clear();
+  record.clear();
+  expectEvent('event:start-file');
+  expectEvent('event:playback-restart');
   final handle = mpvCreate();
   addTearDown(() => mpvDestroy(handle));
-  expect(handle.address, isNot(equals(0)));
   expect(setString(handle, 'vo', 'null'), equals(0));
   expect(setString(handle, 'ao', 'null'), equals(0));
   expect(setString(handle, 'idle', 'yes'), equals(0));
@@ -20,16 +41,8 @@ Future<Pointer<Void>> startPlayback() async {
   expect(observeProperty(handle, 'time-pos', doubleFormat), equals(0));
   expect(requestLogMessages(handle, 'warn'), equals(0));
   expect(loadFile(handle, testUrl), equals(0));
-  expect(
-    waitForTrace(handle, () => traceHas('event:start-file'), 45),
-    isTrue,
-    reason: 'start-file: $eventTrace',
-  );
-  expect(
-    waitForTrace(handle, () => traceHas('event:playback-restart'), 45),
-    isTrue,
-    reason: 'playback-restart: $eventTrace',
-  );
+  pump(handle, () => traceHas('event:start-file'), 45, 'start-file');
+  pump(handle, () => traceHas('event:playback-restart'), 45, 'restart');
   return handle;
 }
 
@@ -44,7 +57,7 @@ void main() {
   testWidgets(
     'emits start-file before playback-restart',
     (tester) async {
-      await startPlayback();
+      startPlayback();
       expect(
         eventTrace.indexOf('event:start-file'),
         lessThan(eventTrace.indexOf('event:playback-restart')),
@@ -56,12 +69,14 @@ void main() {
   testWidgets(
     'reports duration',
     (tester) async {
-      final handle = await startPlayback();
-      expect(
-        waitForTrace(handle, () => traceHasPropGreaterThan('duration', 0), 15),
-        isTrue,
-        reason: 'duration: $eventTrace',
-      );
+      final handle = startPlayback();
+      pump(handle, () => traceHasPropGreaterThan('duration', 0), 15, 'duration');
+      final durations = eventTrace
+          .where((entry) => entry.startsWith('prop:duration='))
+          .map((entry) => double.parse(entry.split('=').last))
+          .toList();
+      expect(durations, isNotEmpty);
+      expect(durations.every((value) => value >= 0), isTrue);
     },
     timeout: const Timeout(Duration(minutes: 5)),
   );
@@ -69,12 +84,15 @@ void main() {
   testWidgets(
     'advances position',
     (tester) async {
-      final handle = await startPlayback();
-      expect(
-        waitForTrace(handle, () => traceHasPropGreaterThan('time-pos', 1), 30),
-        isTrue,
-        reason: 'time-pos: $eventTrace',
-      );
+      final handle = startPlayback();
+      pump(handle, () => traceHasPropGreaterThan('time-pos', 1), 30, 'time-pos');
+      final positions = eventTrace
+          .where((entry) => entry.startsWith('prop:time-pos='))
+          .map((entry) => double.parse(entry.split('=').last))
+          .toList();
+      expect(positions, isNotEmpty);
+      expect(positions.every((value) => value >= 0), isTrue);
+      expect(positions.last, greaterThan(1));
     },
     timeout: const Timeout(Duration(minutes: 5)),
   );
@@ -82,19 +100,13 @@ void main() {
   testWidgets(
     'pauses and resumes',
     (tester) async {
-      final handle = await startPlayback();
+      final handle = startPlayback();
+      expectEvent('prop:pause=true');
+      expectEvent('prop:pause=false');
       expect(setProperty(handle, 'pause', 'yes'), equals(0));
-      expect(
-        waitForTrace(handle, () => traceHas('prop:pause=true'), 10),
-        isTrue,
-        reason: 'pause: $eventTrace',
-      );
+      pump(handle, () => traceHas('prop:pause=true'), 10, 'pause');
       expect(setProperty(handle, 'pause', 'no'), equals(0));
-      expect(
-        waitForTrace(handle, () => traceHas('prop:pause=false'), 10),
-        isTrue,
-        reason: 'resume: $eventTrace',
-      );
+      pump(handle, () => traceHas('prop:pause=false'), 10, 'resume');
     },
     timeout: const Timeout(Duration(minutes: 5)),
   );
@@ -102,16 +114,13 @@ void main() {
   testWidgets(
     'stops back to idle',
     (tester) async {
-      final handle = await startPlayback();
+      final handle = startPlayback();
       expect(stopPlayback(handle), equals(0));
-      expect(
-        waitForTrace(
-          handle,
-          () => traceHas('prop:idle-active=true') || traceHasPrefix('event:end-file:'),
-          10,
-        ),
-        isTrue,
-        reason: 'stop: $eventTrace',
+      pump(
+        handle,
+        () => traceHas('prop:idle-active=true') || traceHasPrefix('event:end-file:'),
+        10,
+        'stop',
       );
     },
     timeout: const Timeout(Duration(minutes: 5)),
