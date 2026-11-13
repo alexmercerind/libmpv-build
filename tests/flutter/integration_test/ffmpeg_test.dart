@@ -19,7 +19,13 @@ void main() {
 
     final ctxPtr = calloc<Pointer<AvFormatContext>>();
     addTearDown(() => calloc.free(ctxPtr));
-    expect(avformatOpenInput(ctxPtr, kTestUrl), 0);
+
+    // Same user agent mpv sends; the default Lavf agent is refused the clip.
+    final optionsPtr = calloc<Pointer<Void>>();
+    addTearDown(() => calloc.free(optionsPtr));
+    expect(avDictSet(optionsPtr, 'user_agent', 'libmpv'), 0);
+    expect(avformatOpenInput(ctxPtr, kTestUrl, optionsPtr), 0);
+    avDictFree(optionsPtr);
 
     final fmt = ctxPtr.value;
     expect(fmt, isNot(nullptr));
@@ -51,8 +57,8 @@ void main() {
     expect(frame, isNot(nullptr));
     addTearDown(() => avFrameFree(frame));
 
-    var frames = 0;
-    var samples = 0;
+    int frames = 0;
+    int samples = 0;
     while (frames < kMinFrames && avReadFrame(fmt, packet) == 0) {
       if (packet.ref.streamIndex == streamIndex) {
         if (avcodecSendPacket(handle, packet) == 0) {
