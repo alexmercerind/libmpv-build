@@ -46,6 +46,14 @@ final class MpvEventProperty extends Struct {
   external Pointer<Void> data;
 }
 
+final class MpvEventEndFile extends Struct {
+  @Int32()
+  external int reason;
+
+  @Int32()
+  external int error;
+}
+
 const noEvent = 0;
 const shutdownEvent = 1;
 const startFileEvent = 6;
@@ -63,6 +71,14 @@ const eventNames = <int, String>{
   8: 'file-loaded',
   21: 'playback-restart',
   22: 'property-change',
+};
+
+const endFileReasons = <int, String>{
+  0: 'eof',
+  2: 'stop',
+  3: 'quit',
+  4: 'error',
+  5: 'redirect',
 };
 
 final List<String> eventTrace = [];
@@ -158,6 +174,14 @@ String describeEvent(MpvEvent event) {
     final prop = event.data.cast<MpvEventProperty>().ref;
     return 'prop:${prop.name.toDartString()}=${formatPropValue(prop.format, prop.data)}';
   }
+  if (event.id == endFileEvent && event.data != nullptr) {
+    final end = event.data.cast<MpvEventEndFile>().ref;
+    final reason = endFileReasons[end.reason] ?? end.reason;
+    if (end.reason == 4) {
+      return 'event:end-file:$reason:${end.error}';
+    }
+    return 'event:end-file:$reason';
+  }
   return 'event:${eventNames[event.id] ?? event.id}';
 }
 
@@ -181,6 +205,10 @@ bool waitForTrace(Pointer<Void> handle, bool Function() done, int timeoutSeconds
 
 bool traceHas(String entry) {
   return eventTrace.contains(entry);
+}
+
+bool traceHasPrefix(String prefix) {
+  return eventTrace.any((entry) => entry.startsWith(prefix));
 }
 
 bool traceHasPropGreaterThan(String name, double value) {

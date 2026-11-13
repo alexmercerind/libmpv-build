@@ -106,7 +106,7 @@ void main() {
       expect(
         waitForTrace(
           handle,
-          () => traceHas('prop:idle-active=true') || traceHas('event:end-file'),
+          () => traceHas('prop:idle-active=true') || traceHasPrefix('event:end-file:'),
           10,
         ),
         isTrue,
