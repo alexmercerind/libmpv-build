@@ -10,86 +10,6 @@ permissions:
   actions: read
 
 jobs:
-  build_audio:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - target: android-arm64-v8a
-            title: Android arm64-v8a
-            runner: ubuntu-22.04
-          - target: android-armeabi-v7a
-            title: Android armeabi-v7a
-            runner: ubuntu-22.04
-          - target: android-x86
-            title: Android x86
-            runner: ubuntu-22.04
-          - target: android-x86_64
-            title: Android x86_64
-            runner: ubuntu-22.04
-          - target: ios-arm64
-            title: iOS arm64
-            runner: macos-15
-          - target: ios-simulator-amd64
-            title: iOS simulator-amd64
-            runner: macos-15
-          - target: ios-simulator-arm64
-            title: iOS simulator-arm64
-            runner: macos-15
-          - target: macos-amd64
-            title: macOS amd64
-            runner: macos-15
-          - target: macos-arm64
-            title: macOS arm64
-            runner: macos-15
-          - target: windows-arm64
-            title: Windows arm64
-            runner: ubuntu-22.04
-          - target: windows-x64
-            title: Windows x64
-            runner: ubuntu-22.04
-    runs-on: ${{ matrix.runner }}
-    name: ${{ matrix.title }} Audio
-    steps:
-      - name: Check Out Code
-        uses: actions/checkout@v5
-      - name: Install Host Tools
-        if: startsWith(matrix.runner, 'ubuntu')
-        run: |
-          { printf 'nameserver 8.8.8.8\nnameserver 1.1.1.1\noptions timeout:5 attempts:2\n'; cat /etc/resolv.conf; } | sudo tee /etc/resolv.conf > /dev/null
-          sudo apt-get update && sudo apt-get install -y nasm pkg-config python3 python3-pip python3-venv cmake patch git build-essential
-      - name: Install Host Tools
-        if: startsWith(matrix.runner, 'macos')
-        run: brew install nasm pkg-config cmake
-      - name: Install Python Requirements
-        run: |
-          python3 -m venv .venv
-          .venv/bin/python -m pip install --upgrade pip -r requirements.txt
-      - name: Run Build
-        run: |
-          export PATH="$PWD/.venv/bin:$PATH"
-          .venv/bin/python build.py ${{ matrix.target }} audio
-      - name: Upload Prod Artifact
-        uses: actions/upload-artifact@v6
-        with:
-          name: libmpv-${{ matrix.target }}-audio
-          path: |
-            dist/*
-            !dist/*-debug.*
-      - name: Upload Debug Artifact
-        uses: actions/upload-artifact@v6
-        with:
-          name: libmpv-${{ matrix.target }}-audio-debug
-          path: dist/*-debug.*
-      - name: Publish Release
-        uses: softprops/action-gh-release@v2
-        if: github.ref == 'refs/heads/master'
-        with:
-          draft: true
-          prerelease: false
-          tag_name: vnext
-          files: dist/*
-
   build_video:
     strategy:
       fail-fast: false
@@ -160,78 +80,6 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           name: libmpv-${{ matrix.target }}-video-debug
-          path: dist/*-debug.*
-      - name: Publish Release
-        uses: softprops/action-gh-release@v2
-        if: github.ref == 'refs/heads/master'
-        with:
-          draft: true
-          prerelease: false
-          tag_name: vnext
-          files: dist/*
-
-  build_audio_linux:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - target: linux-aarch64
-            title: Linux aarch64
-            runner: ubuntu-24.04-arm
-          - target: linux-x86_64
-            title: Linux x86_64
-            runner: ubuntu-22.04
-    runs-on: ${{ matrix.runner }}
-    # Pin ubuntu:20.04 for backward compatibility with glibc 2.31
-    container: ubuntu:20.04
-    name: ${{ matrix.title }} Audio
-    steps:
-      - name: Check Out Code
-        uses: actions/checkout@v5
-      - name: Install Host Tools
-        run: |
-          { printf 'nameserver 8.8.8.8\nnameserver 1.1.1.1\noptions timeout:5 attempts:2\n'; cat /etc/resolv.conf; } | tee /etc/resolv.conf > /dev/null
-          apt-get update && env DEBIAN_FRONTEND=noninteractive apt-get install -y pkg-config python3 python3-pip python3-venv patch git curl libpulse-dev libasound2-dev build-essential
-      - name: Install Nasm
-        run: |
-          case "${{ matrix.target }}" in
-            *-aarch64) DARCH=arm64; SHA=3e1d7296d46191fd0ffc475b5476ee63a0400cf59a2bc8b3f3d9b9a7c7d327e6 ;;
-            *) DARCH=amd64; SHA=c860caec653b865d5b83359452d97b11f1b3ba5b18b07cac554cf72550b3bfc9 ;;
-          esac
-          curl -sL -o nasm.deb http://ftp.debian.org/debian/pool/main/n/nasm/nasm_2.15.05-1_$DARCH.deb
-          echo "$SHA  nasm.deb" | sha256sum -c -
-          dpkg-deb -x nasm.deb nasmdeb
-          cp nasmdeb/usr/bin/nasm /usr/local/bin/
-      - name: Install Cmake
-        run: |
-          case "${{ matrix.target }}" in
-            *-aarch64) TARCH=linux-aarch64; SHA=b4cc788d63112b2749b40627e719eb5d3b8ed8f00c36d77189f4019cfe64bc9e ;;
-            *) TARCH=linux-x86_64; SHA=5a1133ff103c71eb5120e2cc3de922733e7d8a26a98ae716397e8676adb367bf ;;
-          esac
-          curl -sL -o cmake.tar.gz https://github.com/Kitware/CMake/releases/download/v3.31.6/cmake-3.31.6-$TARCH.tar.gz
-          echo "$SHA  cmake.tar.gz" | sha256sum -c -
-          tar -xf cmake.tar.gz
-          cp -r cmake-3.31.6-$TARCH/bin/. /usr/local/bin/
-          cp -r cmake-3.31.6-$TARCH/share/. /usr/local/share/
-      - name: Install Python Requirements
-        run: |
-          python3 -m venv .venv
-          .venv/bin/python -m pip install --upgrade pip -r requirements.txt
-      - name: Run Build
-        run: |
-          export PATH="$PWD/.venv/bin:$PATH"
-          .venv/bin/python build.py ${{ matrix.target }} audio
-      - name: Upload Prod Artifact
-        uses: actions/upload-artifact@v6
-        with:
-          name: libmpv-${{ matrix.target }}-audio
-          path: |
-            dist/*
-            !dist/*-debug.*
-      - name: Upload Debug Artifact
-        uses: actions/upload-artifact@v6
-        with:
-          name: libmpv-${{ matrix.target }}-audio-debug
           path: dist/*-debug.*
       - name: Publish Release
         uses: softprops/action-gh-release@v2
@@ -315,44 +163,19 @@ jobs:
           files: dist/*
 
   test:
-    needs: [build_audio, build_audio_linux, build_video, build_video_linux]
+    needs: [build_video, build_video_linux]
     name: Test
     uses: ./.github/workflows/test.yml
     with:
       run-id: ${{ github.run_id }}
 
   combine_darwin:
-    needs: [build_audio, build_video]
+    needs: [build_video]
     runs-on: macos-15
     name: Combine universal macOS/iOS
     steps:
       - name: Check Out Code
         uses: actions/checkout@v5
-      - name: Download macOS arm64 audio slice
-        uses: actions/download-artifact@v6
-        with:
-          name: libmpv-macos-arm64-audio
-          path: ${{ runner.temp }}/slices-audio/macos-arm64
-      - name: Download macOS amd64 audio slice
-        uses: actions/download-artifact@v6
-        with:
-          name: libmpv-macos-amd64-audio
-          path: ${{ runner.temp }}/slices-audio/macos-amd64
-      - name: Download iOS arm64 audio slice
-        uses: actions/download-artifact@v6
-        with:
-          name: libmpv-ios-arm64-audio
-          path: ${{ runner.temp }}/slices-audio/ios-arm64
-      - name: Download iOS simulator arm64 audio slice
-        uses: actions/download-artifact@v6
-        with:
-          name: libmpv-ios-simulator-arm64-audio
-          path: ${{ runner.temp }}/slices-audio/ios-simulator-arm64
-      - name: Download iOS simulator amd64 audio slice
-        uses: actions/download-artifact@v6
-        with:
-          name: libmpv-ios-simulator-amd64-audio
-          path: ${{ runner.temp }}/slices-audio/ios-simulator-amd64
       - name: Download macOS arm64 video slice
         uses: actions/download-artifact@v6
         with:
@@ -378,20 +201,8 @@ jobs:
         with:
           name: libmpv-ios-simulator-amd64-video
           path: ${{ runner.temp }}/slices-video/ios-simulator-amd64
-      - name: Build universal audio xcframeworks
-        run: scripts/combine-darwin.sh "${{ runner.temp }}/slices-audio" "${{ runner.temp }}/combine-audio" audio
       - name: Build universal video xcframeworks
         run: scripts/combine-darwin.sh "${{ runner.temp }}/slices-video" "${{ runner.temp }}/combine-video" video
-      - name: Upload macOS universal audio artifact
-        uses: actions/upload-artifact@v6
-        with:
-          name: libmpv-macos-universal-audio
-          path: ${{ runner.temp }}/combine-audio/libmpv_macos_universal_audio.zip
-      - name: Upload iOS universal audio artifact
-        uses: actions/upload-artifact@v6
-        with:
-          name: libmpv-ios-universal-audio
-          path: ${{ runner.temp }}/combine-audio/libmpv_ios_universal_audio.zip
       - name: Upload macOS universal video artifact
         uses: actions/upload-artifact@v6
         with:
@@ -409,6 +220,4 @@ jobs:
           draft: true
           prerelease: false
           tag_name: vnext
-          files: |
-            ${{ runner.temp }}/combine-audio/*.zip
-            ${{ runner.temp }}/combine-video/*.zip
+          files: ${{ runner.temp }}/combine-video/*.zip
