@@ -1,0 +1,10 @@
+# hardware decoding
+
+--enable-vaapi
+--enable-hwaccel=av1_vaapi
+--enable-hwaccel=h264_vaapi
+--enable-hwaccel=hevc_vaapi
+--enable-hwaccel=mpeg2_vaapi
+--enable-hwaccel=mpeg4_vaapi
+--enable-hwaccel=vp8_vaapi
+--enable-hwaccel=vp9_vaapi

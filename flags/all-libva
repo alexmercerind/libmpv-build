@@ -1,0 +1,9 @@
+# base options
+
+-Ddisable_drm=false
+-Denable_docs=false
+-Dwith_glx=no
+-Dwith_wayland=no
+-Dwith_win32=no
+-Dwith_x11=no
+-Ddefault_library=static
