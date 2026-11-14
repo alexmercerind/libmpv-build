@@ -10,6 +10,7 @@ import stat
 import subprocess
 import sys
 import tarfile
+import time
 import urllib.request
 import zipfile
 from dataclasses import dataclass
@@ -1181,30 +1182,44 @@ def package_debug_linux(base: Path, build_target: BuildTarget, build_variant: Bu
 
 # Downloads a file
 def download(url: str, sha: str, dest: Path) -> None:
-    def matches() -> bool:
-        digest = hashlib.sha256()
+    def digest() -> Optional[str]:
+        if not dest.is_file():
+            return None
+        result = hashlib.sha256()
         with open(dest, "rb") as handle:
             for chunk in iter(lambda: handle.read(65536), b""):
-                digest.update(chunk)
-        return digest.hexdigest() == sha
+                result.update(chunk)
+        return result.hexdigest()
 
-    if dest.exists() and matches():
+    if digest() == sha:
         return
     # A stale or corrupt cache is refetched in the same run, not fatal.
-    if dest.exists():
-        dest.unlink()
+    dest.unlink(missing_ok=True)
     for attempt in (1, 2, 3):
         try:
-            with urllib.request.urlopen(url, timeout=120) as response, open(dest, "wb") as handle:
+            # Bust through poisoned egress caches: some runners received
+            # stale bytes for one asset while the origin serves the pinned
+            # hash everywhere else.
+            request = urllib.request.Request(
+                url,
+                headers={
+                    "User-Agent": "libmpv-build",
+                    "Accept": "*/*",
+                    "Cache-Control": "no-cache",
+                },
+            )
+            with urllib.request.urlopen(request, timeout=120) as response, open(dest, "wb") as handle:
                 shutil.copyfileobj(response, handle)
         except (OSError, ValueError):
             if attempt == 3:
                 raise
-            continue
-        if matches():
-            return
-        dest.unlink(missing_ok=True)
-    abort(f"bad sha256: {dest}")
+        else:
+            if digest() == sha:
+                return
+            dest.unlink(missing_ok=True)
+        if attempt < 3:
+            time.sleep(5 * attempt)
+    abort(f"bad sha256: {dest} (want {sha}, got {digest()})")
 
 
 # Archives a zip file
