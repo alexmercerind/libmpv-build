@@ -2,6 +2,7 @@
 
 -Dcocoa=enabled
 -Dgl-cocoa=enabled
+-Dswift-build=enabled
 
 # hardware decoding
 
