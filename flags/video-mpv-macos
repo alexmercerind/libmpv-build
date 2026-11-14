@@ -1,9 +1,0 @@
-# video outputs
-
--Dcocoa=enabled
--Dgl-cocoa=enabled
--Dswift-build=enabled
-
-# hardware decoding
-
--Dvideotoolbox-gl=enabled
