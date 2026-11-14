@@ -1,6 +1,6 @@
 # base options
 
--Ddefault_library=static
 -Dbin=false
 -Ddocs=false
 -Dtests=false
+-Ddefault_library=static

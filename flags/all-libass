@@ -1,6 +1,5 @@
 # base options
 
--Ddefault_library=static
 -Dcheckasm=disabled
 -Dcompare=disabled
 -Dcoretext=disabled
@@ -11,3 +10,4 @@
 -Dprofile=disabled
 -Drequire-system-font-provider=false
 -Dtest=disabled
+-Ddefault_library=static

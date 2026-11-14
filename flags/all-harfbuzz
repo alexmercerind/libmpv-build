@@ -1,6 +1,5 @@
 # base options
 
--Ddefault_library=static
 -Dcairo=disabled
 -Dchafa=disabled
 -Ddocs=disabled
@@ -11,3 +10,4 @@
 -Dintrospection=disabled
 -Dtests=disabled
 -Dutilities=disabled
+-Ddefault_library=static
