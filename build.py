@@ -145,6 +145,7 @@ class Dependency:
     tool: BuildTool
     dependencies: list[str]
     os: Optional[list[str]] = None
+    variants: Optional[list[str]] = None
 
 
 # ----------------------------------------------------------------------------
@@ -232,13 +233,15 @@ def main() -> int:
     print(f"building {build_target} {build_variant}", flush=True)
     base = Path(__file__).resolve().parent
     check_host_compat(build_target)
-    dependencies = get_dependencies(base)
+    dependencies = get_dependencies(base, build_variant)
     cross_file = base / CROSS_DIR / f"{build_target}.txt"
     prefix = base / DEPS_DIR / f"{PREFIX}{build_target}"
     shutil.rmtree(prefix, ignore_errors=True)
     build_env = get_target_env(base, build_target, prefix)
     for dependency in dependencies:
         if dependency.os is not None and build_target.build_os.value not in dependency.os:
+            continue
+        if dependency.variants is not None and build_variant.value not in dependency.variants:
             continue
         print(f"building {dependency.name}", flush=True)
         build_dependency(base, dependency, build_target, build_variant, cross_file, prefix, build_env)
@@ -256,7 +259,7 @@ def main() -> int:
 
 
 # Gets dependencies in topological build order
-def get_dependencies(base: Path) -> list[Dependency]:
+def get_dependencies(base: Path, build_variant: Optional[BuildVariant] = None) -> list[Dependency]:
     entries = {}
     for item in yaml.safe_load((base / DEPENDENCIES_FILE).read_text()):
         try:
@@ -271,7 +274,15 @@ def get_dependencies(base: Path) -> list[Dependency]:
             tool=tool,
             dependencies=item["dependencies"],
             os=item.get("os"),
+            variants=item.get("variants"),
         )
+    if build_variant is not None:
+        # Video-only dependencies (e.g. libass, dav1d) stay out of audio
+        # builds entirely; edges into them are pruned with the entry.
+        dropped = {name for name, entry in entries.items() if entry.variants is not None and build_variant.value not in entry.variants}
+        entries = {name: entry for name, entry in entries.items() if name not in dropped}
+        for entry in entries.values():
+            entry.dependencies = [edge for edge in entry.dependencies if edge not in dropped]
     for name, entry in entries.items():
         for edge in entry.dependencies:
             if edge not in entries:

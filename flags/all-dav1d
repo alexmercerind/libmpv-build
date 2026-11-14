@@ -1,0 +1,5 @@
+# base options
+
+-Ddefault_library=static
+-Denable_tests=false
+-Denable_tools=false

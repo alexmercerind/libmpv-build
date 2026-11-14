@@ -1,0 +1,13 @@
+# base options
+
+-Ddefault_library=static
+-Dcairo=disabled
+-Dchafa=disabled
+-Ddocs=disabled
+-Dfreetype=enabled
+-Dglib=disabled
+-Dgobject=disabled
+-Dicu=disabled
+-Dintrospection=disabled
+-Dtests=disabled
+-Dutilities=disabled

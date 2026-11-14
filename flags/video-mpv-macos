@@ -1,0 +1,8 @@
+# video outputs
+
+-Dcocoa=enabled
+-Dgl-cocoa=enabled
+
+# hardware decoding
+
+-Dvideotoolbox-gl=enabled

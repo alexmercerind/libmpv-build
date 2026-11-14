@@ -1,0 +1,8 @@
+# video outputs
+
+-Dgl=enabled
+-Dplain-gl=enabled
+
+# subtitles
+
+-Dlibass=enabled

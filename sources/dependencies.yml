@@ -1,3 +1,10 @@
+- name: dav1d
+  version: 1.5.4
+  url: https://code.videolan.org/videolan/dav1d/-/archive/1.5.4/dav1d-1.5.4.tar.bz2
+  sha256: 2abfb0c89212e6e4733a54e0ae509ec00a5b845a6360946f918806e14aedb011
+  tool: meson
+  dependencies: []
+  variants: [video]
 - name: fast-float
   version: 8.2.2
   url: https://github.com/fastfloat/fast_float/archive/refs/tags/v8.2.2.tar.gz
@@ -10,9 +17,43 @@
   sha256: 8c3850283eb25fa026482078a04051e0be17347b09ef81a0849bec15a96e002e
   tool: configure
   dependencies:
+    - dav1d
     - libxml2
     - mbedtls
     - zlib
+- name: freetype
+  version: 2.15.0
+  url: https://download.savannah.gnu.org/releases/freetype/freetype-2.15.0.tar.xz
+  sha256: 93cd47eb719c325107f2d3cf087d06299e944c3b48a40b55537302304dea1dd5
+  tool: meson
+  dependencies:
+    - zlib
+  variants: [video]
+- name: fribidi
+  version: 1.0.18
+  url: https://github.com/fribidi/fribidi/releases/download/v1.0.18/fribidi-1.0.18.tar.xz
+  sha256: 1de5e8073d035388b71d0b2d452b1da1f8caeea8a7702997b401fe1b6250727f
+  tool: meson
+  dependencies: []
+  variants: [video]
+- name: harfbuzz
+  version: 15.1.0
+  url: https://github.com/harfbuzz/harfbuzz/releases/download/15.1.0/harfbuzz-15.1.0.tar.xz
+  sha256: 0fc7c565443a5f4be7da65ac5ee5bd737d9b158dc908708b7689a0a5796b0c8d
+  tool: meson
+  dependencies:
+    - freetype
+  variants: [video]
+- name: libass
+  version: 0.17.5
+  url: https://github.com/libass/libass/releases/download/0.17.5/libass-0.17.5.tar.xz
+  sha256: 2dca25c0e0c837ddf00b5201f3b82cac1e4ddd3ad018227806c2288864acc
+  tool: meson
+  dependencies:
+    - freetype
+    - fribidi
+    - harfbuzz
+  variants: [video]
 - name: libplacebo
   version: 7.387.0
   url: https://github.com/haasn/libplacebo/archive/refs/tags/v7.387.0.tar.gz
@@ -48,6 +89,7 @@
   tool: meson
   dependencies:
     - ffmpeg
+    - libass
     - libplacebo
     - zlib
 - name: vulkan-headers
