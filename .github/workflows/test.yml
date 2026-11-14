@@ -179,7 +179,7 @@ jobs:
           mkdir -p tests/flutter/mpv_libs/ios/mpv_libs/Frameworks
           gh run download "${{ needs.setup.outputs.run-id }}" --repo "$GITHUB_REPOSITORY" --name "libmpv-ios-simulator-arm64-audio" --dir "$RUNNER_TEMP/artifacts"
           ditto -x -k "$RUNNER_TEMP/artifacts/libmpv_ios_simulator-arm64_audio.zip" tests/flutter/mpv_libs/ios/mpv_libs/Frameworks/
-          test -f tests/flutter/mpv_libs/ios/mpv_libs/Frameworks/Mpv.xcframework/ios-arm64-simulator/Mpv.framework/Versions/A/Mpv
+          test -f tests/flutter/mpv_libs/ios/mpv_libs/Frameworks/Mpv.xcframework/ios-arm64-simulator/Mpv.framework/Mpv
       - name: Run Playback Test
         run: |
           flutter pub get

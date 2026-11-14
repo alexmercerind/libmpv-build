@@ -36,19 +36,19 @@ combine_ios() {
   unzip -q -o "$slices/ios-arm64/libmpv_ios_arm64_audio.zip" -d "$slices/ios-arm64/xc"
   unzip -q -o "$slices/ios-simulator-arm64/libmpv_ios_simulator-arm64_audio.zip" -d "$slices/ios-simulator-arm64/xc"
   unzip -q -o "$slices/ios-simulator-amd64/libmpv_ios_simulator-amd64_audio.zip" -d "$slices/ios-simulator-amd64/xc"
-  # iOS slices arrive in macOS-versioned layout today; shallow bundles would be Apple-correct (see build.py packaging).
+  # iOS slices are shallow bundles (Apple-correct); macOS slices stay versioned.
   local ios_arm64_fw=$(echo "$slices/ios-arm64/xc/Mpv.xcframework"/*/Mpv.framework)
   local ios_sim_arm64_fw=$(echo "$slices/ios-simulator-arm64/xc/Mpv.xcframework"/*/Mpv.framework)
   local ios_sim_amd64_fw=$(echo "$slices/ios-simulator-amd64/xc/Mpv.xcframework"/*/Mpv.framework)
-  test -f "$ios_arm64_fw/Versions/A/Mpv"
-  test -f "$ios_sim_arm64_fw/Versions/A/Mpv"
-  test -f "$ios_sim_amd64_fw/Versions/A/Mpv"
+  test -f "$ios_arm64_fw/Mpv"
+  test -f "$ios_sim_arm64_fw/Mpv"
+  test -f "$ios_sim_amd64_fw/Mpv"
   # Copy with cp -R to keep framework symlinks as links.
   cp -R "$ios_sim_arm64_fw" "$out/ios-simulator-universal/Mpv.framework"
-  lipo -create "$ios_sim_arm64_fw/Versions/A/Mpv" "$ios_sim_amd64_fw/Versions/A/Mpv" -output "$out/ios-simulator-universal/Mpv.framework/Versions/A/Mpv"
+  lipo -create "$ios_sim_arm64_fw/Mpv" "$ios_sim_amd64_fw/Mpv" -output "$out/ios-simulator-universal/Mpv.framework/Mpv"
   # Ad-hoc sign because lipo output is unsigned.
-  codesign --force --sign - "$out/ios-simulator-universal/Mpv.framework/Versions/A/Mpv"
-  lipo -info "$out/ios-simulator-universal/Mpv.framework/Versions/A/Mpv"
+  codesign --force --sign - "$out/ios-simulator-universal/Mpv.framework/Mpv"
+  lipo -info "$out/ios-simulator-universal/Mpv.framework/Mpv"
   # Let xcodebuild write the xcframework Info.plist itself from the input slices.
   xcodebuild -create-xcframework -framework "$ios_arm64_fw" -framework "$out/ios-simulator-universal/Mpv.framework" -output "$out/ios-universal/Mpv.xcframework"
   # Zip from inside so the archive holds relative paths; -y keeps symlinks as links.
