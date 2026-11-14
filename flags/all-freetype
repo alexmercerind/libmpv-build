@@ -3,6 +3,8 @@
 -Ddefault_library=static
 -Dbrotli=disabled
 -Dbzip2=disabled
+# harfbuzz shapes against freetype, so freetype must build first and standalone;
+# harfbuzz (built next) links back against this freetype instead.
 -Dharfbuzz=disabled
 -Dpng=disabled
 -Dtests=disabled
