@@ -976,11 +976,22 @@ def package_release_darwin(base: Path, build_target: BuildTarget, build_variant:
 </plist>
 """)
     framework = work / "Mpv.framework"
-    (framework / "Versions" / "Current").symlink_to("A")
-    (framework / "Headers").symlink_to("Versions/Current/Headers")
-    (framework / "Mpv").symlink_to("Versions/Current/Mpv")
-    (framework / "Modules").symlink_to("Versions/Current/Modules")
-    (framework / "Resources").symlink_to("Versions/Current/Resources")
+    if build_target.build_os == BuildOS.IOS:
+        # iOS frameworks must be shallow bundles: Xcode rejects versioned
+        # layouts ("expected Info.plist at the root level since the platform
+        # uses shallow bundles"). Flatten Versions/A into the framework root.
+        for leaf in sorted(vers.iterdir()):
+            shutil.move(str(leaf), str(framework / leaf.name))
+        shutil.rmtree(framework / "Versions")
+        (framework / "Resources" / "Info.plist").rename(framework / "Info.plist")
+        (framework / "Resources").rmdir()
+    else:
+        # macOS frameworks stay versioned.
+        (framework / "Versions" / "Current").symlink_to("A")
+        (framework / "Headers").symlink_to("Versions/Current/Headers")
+        (framework / "Mpv").symlink_to("Versions/Current/Mpv")
+        (framework / "Modules").symlink_to("Versions/Current/Modules")
+        (framework / "Resources").symlink_to("Versions/Current/Resources")
     xcframework = work / "Mpv.xcframework"
     run(["xcodebuild", "-create-xcframework", "-framework", str(framework), "-output", str(xcframework)], base)
     path = dist / f"{stem}.{RELEASE_ARCHIVE_EXT[build_target.build_os]}"
