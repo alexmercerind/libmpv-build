@@ -1,0 +1,4 @@
+# libass directwrite provider
+
+-ldwrite
+-lgdi32

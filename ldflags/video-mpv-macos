@@ -1,0 +1,5 @@
+# system font provider frameworks
+
+-framework ApplicationServices
+-framework CoreFoundation
+-framework CoreText

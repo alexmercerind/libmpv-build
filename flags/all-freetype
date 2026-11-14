@@ -1,0 +1,9 @@
+# base options
+
+-Dbrotli=disabled
+-Dbzip2=disabled
+-Dharfbuzz=disabled
+-Dpng=disabled
+-Dtests=disabled
+-Dzlib=system
+-Ddefault_library=static

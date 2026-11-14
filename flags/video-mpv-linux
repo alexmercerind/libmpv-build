@@ -1,0 +1,5 @@
+# display and hardware decoding
+
+-Ddrm=enabled
+-Dvaapi=enabled
+-Dvaapi-drm=enabled

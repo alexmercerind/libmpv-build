@@ -1,0 +1,4 @@
+# static deps
+
+-lva
+-lva-drm

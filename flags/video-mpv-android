@@ -1,0 +1,7 @@
+# video outputs
+
+-Degl-android=enabled
+
+# hardware decoding
+
+-Dandroid-media-ndk=enabled

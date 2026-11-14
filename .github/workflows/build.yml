@@ -10,7 +10,7 @@ permissions:
   actions: read
 
 jobs:
-  build_audio:
+  build_video:
     strategy:
       fail-fast: false
       matrix:
@@ -49,7 +49,7 @@ jobs:
             title: Windows x64
             runner: ubuntu-22.04
     runs-on: ${{ matrix.runner }}
-    name: ${{ matrix.title }} Audio
+    name: ${{ matrix.title }} Video
     steps:
       - name: Check Out Code
         uses: actions/checkout@v5
@@ -68,18 +68,22 @@ jobs:
       - name: Run Build
         run: |
           export PATH="$PWD/.venv/bin:$PATH"
-          .venv/bin/python build.py ${{ matrix.target }} audio
+          .venv/bin/python build.py ${{ matrix.target }} video
+      - name: Dump Meson Logs on Failure
+        if: failure()
+        run: |
+          for f in deps/*/build/meson-logs/meson-log.txt; do echo "=== $f ==="; cat "$f"; done
       - name: Upload Prod Artifact
         uses: actions/upload-artifact@v6
         with:
-          name: libmpv-${{ matrix.target }}-audio
+          name: libmpv-${{ matrix.target }}-video
           path: |
             dist/*
             !dist/*-debug.*
       - name: Upload Debug Artifact
         uses: actions/upload-artifact@v6
         with:
-          name: libmpv-${{ matrix.target }}-audio-debug
+          name: libmpv-${{ matrix.target }}-video-debug
           path: dist/*-debug.*
       - name: Publish Release
         uses: softprops/action-gh-release@v2
@@ -90,7 +94,7 @@ jobs:
           tag_name: vnext
           files: dist/*
 
-  build_audio_linux:
+  build_video_linux:
     strategy:
       fail-fast: false
       matrix:
@@ -104,14 +108,14 @@ jobs:
     runs-on: ${{ matrix.runner }}
     # Pin ubuntu:20.04 for backward compatibility with glibc 2.31
     container: ubuntu:20.04
-    name: ${{ matrix.title }} Audio
+    name: ${{ matrix.title }} Video
     steps:
       - name: Check Out Code
         uses: actions/checkout@v5
       - name: Install Host Tools
         run: |
           { printf 'nameserver 8.8.8.8\nnameserver 1.1.1.1\noptions timeout:5 attempts:2\n'; cat /etc/resolv.conf; } | tee /etc/resolv.conf > /dev/null
-          apt-get update && env DEBIAN_FRONTEND=noninteractive apt-get install -y pkg-config python3 python3-pip python3-venv patch git curl libpulse-dev libasound2-dev build-essential
+          apt-get update && env DEBIAN_FRONTEND=noninteractive apt-get install -y pkg-config python3 python3-pip python3-venv patch git curl libpulse-dev libasound2-dev hwdata libdrm-dev build-essential
       - name: Install Nasm
         run: |
           case "${{ matrix.target }}" in
@@ -140,18 +144,18 @@ jobs:
       - name: Run Build
         run: |
           export PATH="$PWD/.venv/bin:$PATH"
-          .venv/bin/python build.py ${{ matrix.target }} audio
+          .venv/bin/python build.py ${{ matrix.target }} video
       - name: Upload Prod Artifact
         uses: actions/upload-artifact@v6
         with:
-          name: libmpv-${{ matrix.target }}-audio
+          name: libmpv-${{ matrix.target }}-video
           path: |
             dist/*
             !dist/*-debug.*
       - name: Upload Debug Artifact
         uses: actions/upload-artifact@v6
         with:
-          name: libmpv-${{ matrix.target }}-audio-debug
+          name: libmpv-${{ matrix.target }}-video-debug
           path: dist/*-debug.*
       - name: Publish Release
         uses: softprops/action-gh-release@v2
@@ -163,56 +167,56 @@ jobs:
           files: dist/*
 
   test:
-    needs: [build_audio, build_audio_linux]
+    needs: [build_video, build_video_linux]
     name: Test
     uses: ./.github/workflows/test.yml
     with:
       run-id: ${{ github.run_id }}
 
   combine_darwin:
-    needs: build_audio
+    needs: [build_video]
     runs-on: macos-15
     name: Combine universal macOS/iOS
     steps:
       - name: Check Out Code
         uses: actions/checkout@v5
-      - name: Download macOS arm64 slice
+      - name: Download macOS arm64 video slice
         uses: actions/download-artifact@v6
         with:
-          name: libmpv-macos-arm64-audio
-          path: ${{ runner.temp }}/slices/macos-arm64
-      - name: Download macOS amd64 slice
+          name: libmpv-macos-arm64-video
+          path: ${{ runner.temp }}/slices-video/macos-arm64
+      - name: Download macOS amd64 video slice
         uses: actions/download-artifact@v6
         with:
-          name: libmpv-macos-amd64-audio
-          path: ${{ runner.temp }}/slices/macos-amd64
-      - name: Download iOS arm64 slice
+          name: libmpv-macos-amd64-video
+          path: ${{ runner.temp }}/slices-video/macos-amd64
+      - name: Download iOS arm64 video slice
         uses: actions/download-artifact@v6
         with:
-          name: libmpv-ios-arm64-audio
-          path: ${{ runner.temp }}/slices/ios-arm64
-      - name: Download iOS simulator arm64 slice
+          name: libmpv-ios-arm64-video
+          path: ${{ runner.temp }}/slices-video/ios-arm64
+      - name: Download iOS simulator arm64 video slice
         uses: actions/download-artifact@v6
         with:
-          name: libmpv-ios-simulator-arm64-audio
-          path: ${{ runner.temp }}/slices/ios-simulator-arm64
-      - name: Download iOS simulator amd64 slice
+          name: libmpv-ios-simulator-arm64-video
+          path: ${{ runner.temp }}/slices-video/ios-simulator-arm64
+      - name: Download iOS simulator amd64 video slice
         uses: actions/download-artifact@v6
         with:
-          name: libmpv-ios-simulator-amd64-audio
-          path: ${{ runner.temp }}/slices/ios-simulator-amd64
-      - name: Build universal xcframeworks
-        run: scripts/combine-darwin.sh "${{ runner.temp }}/slices" "${{ runner.temp }}/combine"
-      - name: Upload macOS universal artifact
+          name: libmpv-ios-simulator-amd64-video
+          path: ${{ runner.temp }}/slices-video/ios-simulator-amd64
+      - name: Build universal video xcframeworks
+        run: scripts/combine-darwin.sh "${{ runner.temp }}/slices-video" "${{ runner.temp }}/combine-video" video
+      - name: Upload macOS universal video artifact
         uses: actions/upload-artifact@v6
         with:
-          name: libmpv-macos-universal-audio
-          path: ${{ runner.temp }}/combine/libmpv_macos_universal_audio.zip
-      - name: Upload iOS universal artifact
+          name: libmpv-macos-universal-video
+          path: ${{ runner.temp }}/combine-video/libmpv_macos_universal_video.zip
+      - name: Upload iOS universal video artifact
         uses: actions/upload-artifact@v6
         with:
-          name: libmpv-ios-universal-audio
-          path: ${{ runner.temp }}/combine/libmpv_ios_universal_audio.zip
+          name: libmpv-ios-universal-video
+          path: ${{ runner.temp }}/combine-video/libmpv_ios_universal_video.zip
       - name: Publish Release
         uses: softprops/action-gh-release@v2
         if: github.ref == 'refs/heads/master'
@@ -220,4 +224,4 @@ jobs:
           draft: true
           prerelease: false
           tag_name: vnext
-          files: ${{ runner.temp }}/combine/*.zip
+          files: ${{ runner.temp }}/combine-video/*.zip

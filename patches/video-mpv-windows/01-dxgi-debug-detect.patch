@@ -1,0 +1,17 @@
+diff --git a/meson.build b/meson.build
+--- a/meson.build
++++ b/meson.build
+@@ -1436,8 +1436,14 @@ features += {'d3d-hwaccel': d3d_hwaccel.allowed()}
+ if features['d3d-hwaccel']
+     sources += files('video/d3d.c',
+                      'video/filter/vf_d3d11vpp.c')
+ endif
++# vf_d3d11vpp.c includes d3d11_helpers.h even without d3d11 output, and its
++# DXGI_DEBUG_D3D11 fallback collides with newer mingw headers unless the
++# symbol is detected here as well.
++if features['d3d-hwaccel'] and not ('dxgi-debug-d3d11' in features)
++    features += {'dxgi-debug-d3d11': cc.has_header_symbol('d3d11sdklayers.h', 'DXGI_DEBUG_D3D11')}
++endif
+ 
+ amf = cc.has_header('AMF/core/Factory.h', required:
+     get_option('amf').require(features['d3d-hwaccel']))

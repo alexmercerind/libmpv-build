@@ -10,6 +10,7 @@ import stat
 import subprocess
 import sys
 import tarfile
+import time
 import urllib.request
 import zipfile
 from dataclasses import dataclass
@@ -145,6 +146,7 @@ class Dependency:
     tool: BuildTool
     dependencies: list[str]
     os: Optional[list[str]] = None
+    variants: Optional[list[str]] = None
 
 
 # ----------------------------------------------------------------------------
@@ -201,6 +203,7 @@ DEPENDENCIES_FILE = "sources/dependencies.yml"
 FLAGS_DIR = "flags"
 LDFLAGS_DIR = "ldflags"
 CROSS_DIR = "cross"
+NATIVE_DIR = "native"
 PATCHES_DIR = "patches"
 DEPS_DIR = "deps"
 BUILD_DIR = "build"
@@ -232,16 +235,19 @@ def main() -> int:
     print(f"building {build_target} {build_variant}", flush=True)
     base = Path(__file__).resolve().parent
     check_host_compat(build_target)
-    dependencies = get_dependencies(base)
+    dependencies = get_dependencies(base, build_variant)
     cross_file = base / CROSS_DIR / f"{build_target}.txt"
+    native_file = base / NATIVE_DIR / f"{build_target}.txt"
     prefix = base / DEPS_DIR / f"{PREFIX}{build_target}"
     shutil.rmtree(prefix, ignore_errors=True)
     build_env = get_target_env(base, build_target, prefix)
     for dependency in dependencies:
         if dependency.os is not None and build_target.build_os.value not in dependency.os:
             continue
+        if dependency.variants is not None and build_variant.value not in dependency.variants:
+            continue
         print(f"building {dependency.name}", flush=True)
-        build_dependency(base, dependency, build_target, build_variant, cross_file, prefix, build_env)
+        build_dependency(base, dependency, build_target, build_variant, cross_file, native_file, prefix, build_env)
     split_debug(prefix, build_target, build_env)
     path = package_release(base, build_target, build_variant, prefix)
     debug_path = package_debug(base, build_target, build_variant, prefix)
@@ -256,7 +262,7 @@ def main() -> int:
 
 
 # Gets dependencies in topological build order
-def get_dependencies(base: Path) -> list[Dependency]:
+def get_dependencies(base: Path, build_variant: Optional[BuildVariant] = None) -> list[Dependency]:
     entries = {}
     for item in yaml.safe_load((base / DEPENDENCIES_FILE).read_text()):
         try:
@@ -271,7 +277,15 @@ def get_dependencies(base: Path) -> list[Dependency]:
             tool=tool,
             dependencies=item["dependencies"],
             os=item.get("os"),
+            variants=item.get("variants"),
         )
+    if build_variant is not None:
+        # Video-only dependencies (e.g. libass, dav1d) stay out of audio
+        # builds entirely; edges into them are pruned with the entry.
+        dropped = {name for name, entry in entries.items() if entry.variants is not None and build_variant.value not in entry.variants}
+        entries = {name: entry for name, entry in entries.items() if name not in dropped}
+        for entry in entries.values():
+            entry.dependencies = [edge for edge in entry.dependencies if edge not in dropped]
     for name, entry in entries.items():
         for edge in entry.dependencies:
             if edge not in entries:
@@ -718,7 +732,7 @@ def get_ldflags(base: Path, name: str, build_target: BuildTarget, build_variant:
 
 
 # Fetches, patches, and builds one dependency
-def build_dependency(base: Path, dependency: Dependency, build_target: BuildTarget, build_variant: BuildVariant, cross_file: Path, prefix: Path, build_env: BuildEnv) -> None:
+def build_dependency(base: Path, dependency: Dependency, build_target: BuildTarget, build_variant: BuildVariant, cross_file: Path, native_file: Path, prefix: Path, build_env: BuildEnv) -> None:
     src = fetch_dependency(base, dependency.name, dependency.url, dependency.sha256)
     for path in get_patch_files(base, dependency.name, build_target, build_variant):
         print(f"applying {path}", flush=True)
@@ -735,7 +749,7 @@ def build_dependency(base: Path, dependency: Dependency, build_target: BuildTarg
     if dependency.name == "ffmpeg":
         build_ffmpeg(src, build_target, prefix, flags, build_env)
     elif dependency.tool == BuildTool.MESON:
-        build_meson(src, prefix, cross_file, flags, build_env)
+        build_meson(src, prefix, cross_file, native_file, flags, build_env)
     elif dependency.tool == BuildTool.CMAKE:
         build_cmake(src, build_target, prefix, flags, build_env)
     else:
@@ -811,11 +825,14 @@ def build_ffmpeg(src: Path, build_target: BuildTarget, prefix: Path, args: list[
 
 
 # Builds and installs with meson
-def build_meson(src: Path, prefix: Path, cross_file: Path, args: list[str], build_env: BuildEnv) -> None:
+def build_meson(src: Path, prefix: Path, cross_file: Path, native_file: Path, args: list[str], build_env: BuildEnv) -> None:
     builddir = src / BUILD_DIR
     shutil.rmtree(builddir, ignore_errors=True)
+    # A native file gives cross builds a working build-machine compiler for
+    # helper tools (e.g. fribidi codegen); targets without one are unaffected.
+    native_args = [f"--native-file={native_file}"] if native_file.is_file() else []
     run(
-        ["meson", "setup", str(builddir), str(src), f"--prefix={prefix}", f"--cross-file={cross_file}"] + args,
+        ["meson", "setup", str(builddir), str(src), f"--prefix={prefix}", f"--cross-file={cross_file}"] + native_args + args,
         src,
         build_env,
     )
@@ -1165,30 +1182,44 @@ def package_debug_linux(base: Path, build_target: BuildTarget, build_variant: Bu
 
 # Downloads a file
 def download(url: str, sha: str, dest: Path) -> None:
-    def matches() -> bool:
-        digest = hashlib.sha256()
+    def digest() -> Optional[str]:
+        if not dest.is_file():
+            return None
+        result = hashlib.sha256()
         with open(dest, "rb") as handle:
             for chunk in iter(lambda: handle.read(65536), b""):
-                digest.update(chunk)
-        return digest.hexdigest() == sha
+                result.update(chunk)
+        return result.hexdigest()
 
-    if dest.exists() and matches():
+    if digest() == sha:
         return
     # A stale or corrupt cache is refetched in the same run, not fatal.
-    if dest.exists():
-        dest.unlink()
+    dest.unlink(missing_ok=True)
     for attempt in (1, 2, 3):
         try:
-            with urllib.request.urlopen(url, timeout=120) as response, open(dest, "wb") as handle:
+            # Bust through poisoned egress caches: some runners received
+            # stale bytes for one asset while the origin serves the pinned
+            # hash everywhere else.
+            request = urllib.request.Request(
+                url,
+                headers={
+                    "User-Agent": "libmpv-build",
+                    "Accept": "*/*",
+                    "Cache-Control": "no-cache",
+                },
+            )
+            with urllib.request.urlopen(request, timeout=120) as response, open(dest, "wb") as handle:
                 shutil.copyfileobj(response, handle)
         except (OSError, ValueError):
             if attempt == 3:
                 raise
-            continue
-        if matches():
-            return
-        dest.unlink(missing_ok=True)
-    abort(f"bad sha256: {dest}")
+        else:
+            if digest() == sha:
+                return
+            dest.unlink(missing_ok=True)
+        if attempt < 3:
+            time.sleep(5 * attempt)
+    abort(f"bad sha256: {dest} (want {sha}, got {digest()})")
 
 
 # Archives a zip file

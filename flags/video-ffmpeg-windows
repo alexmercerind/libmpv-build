@@ -1,0 +1,4 @@
+# hardware decoding
+
+--enable-d3d11va
+--enable-dxva2

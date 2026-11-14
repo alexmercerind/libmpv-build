@@ -1,0 +1,8 @@
+# video outputs
+
+-Dgl-win32=enabled
+
+# hardware decoding
+
+-Dd3d-hwaccel=enabled
+-Dd3d9-hwaccel=enabled
