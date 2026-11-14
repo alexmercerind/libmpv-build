@@ -69,6 +69,10 @@ jobs:
         run: |
           export PATH="$PWD/.venv/bin:$PATH"
           .venv/bin/python build.py ${{ matrix.target }} video
+      - name: Dump Meson Logs on Failure
+        if: failure()
+        run: |
+          for f in deps/*/build/meson-logs/meson-log.txt; do echo "=== $f ==="; cat "$f"; done
       - name: Upload Prod Artifact
         uses: actions/upload-artifact@v6
         with:
