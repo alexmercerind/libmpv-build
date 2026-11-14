@@ -2,6 +2,6 @@
 # OS SDK, so scrub it here for the helper tools that must run on macOS.
 
 [binaries]
-c = ['env', '-u', 'SDKROOT', '-u', 'CFLAGS', '-u', 'LDFLAGS', 'cc']
-cpp = ['env', '-u', 'SDKROOT', '-u', 'CXXFLAGS', '-u', 'LDFLAGS', 'c++']
+c = ['env', '-u', 'SDKROOT', '-u', 'CFLAGS', '-u', 'LDFLAGS', 'xcrun', '-sdk', 'macosx', 'clang']
+cpp = ['env', '-u', 'SDKROOT', '-u', 'CXXFLAGS', '-u', 'LDFLAGS', 'xcrun', '-sdk', 'macosx', 'clang++']
 ar = 'ar'
