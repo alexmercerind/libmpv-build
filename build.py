@@ -202,6 +202,7 @@ DEPENDENCIES_FILE = "sources/dependencies.yml"
 FLAGS_DIR = "flags"
 LDFLAGS_DIR = "ldflags"
 CROSS_DIR = "cross"
+NATIVE_DIR = "native"
 PATCHES_DIR = "patches"
 DEPS_DIR = "deps"
 BUILD_DIR = "build"
@@ -235,6 +236,7 @@ def main() -> int:
     check_host_compat(build_target)
     dependencies = get_dependencies(base, build_variant)
     cross_file = base / CROSS_DIR / f"{build_target}.txt"
+    native_file = base / NATIVE_DIR / f"{build_target}.txt"
     prefix = base / DEPS_DIR / f"{PREFIX}{build_target}"
     shutil.rmtree(prefix, ignore_errors=True)
     build_env = get_target_env(base, build_target, prefix)
@@ -244,7 +246,7 @@ def main() -> int:
         if dependency.variants is not None and build_variant.value not in dependency.variants:
             continue
         print(f"building {dependency.name}", flush=True)
-        build_dependency(base, dependency, build_target, build_variant, cross_file, prefix, build_env)
+        build_dependency(base, dependency, build_target, build_variant, cross_file, native_file, prefix, build_env)
     split_debug(prefix, build_target, build_env)
     path = package_release(base, build_target, build_variant, prefix)
     debug_path = package_debug(base, build_target, build_variant, prefix)
@@ -729,7 +731,7 @@ def get_ldflags(base: Path, name: str, build_target: BuildTarget, build_variant:
 
 
 # Fetches, patches, and builds one dependency
-def build_dependency(base: Path, dependency: Dependency, build_target: BuildTarget, build_variant: BuildVariant, cross_file: Path, prefix: Path, build_env: BuildEnv) -> None:
+def build_dependency(base: Path, dependency: Dependency, build_target: BuildTarget, build_variant: BuildVariant, cross_file: Path, native_file: Path, prefix: Path, build_env: BuildEnv) -> None:
     src = fetch_dependency(base, dependency.name, dependency.url, dependency.sha256)
     for path in get_patch_files(base, dependency.name, build_target, build_variant):
         print(f"applying {path}", flush=True)
@@ -746,7 +748,7 @@ def build_dependency(base: Path, dependency: Dependency, build_target: BuildTarg
     if dependency.name == "ffmpeg":
         build_ffmpeg(src, build_target, prefix, flags, build_env)
     elif dependency.tool == BuildTool.MESON:
-        build_meson(src, prefix, cross_file, flags, build_env)
+        build_meson(src, prefix, cross_file, native_file, flags, build_env)
     elif dependency.tool == BuildTool.CMAKE:
         build_cmake(src, build_target, prefix, flags, build_env)
     else:
@@ -822,11 +824,14 @@ def build_ffmpeg(src: Path, build_target: BuildTarget, prefix: Path, args: list[
 
 
 # Builds and installs with meson
-def build_meson(src: Path, prefix: Path, cross_file: Path, args: list[str], build_env: BuildEnv) -> None:
+def build_meson(src: Path, prefix: Path, cross_file: Path, native_file: Path, args: list[str], build_env: BuildEnv) -> None:
     builddir = src / BUILD_DIR
     shutil.rmtree(builddir, ignore_errors=True)
+    # A native file gives cross builds a working build-machine compiler for
+    # helper tools (e.g. fribidi codegen); targets without one are unaffected.
+    native_args = [f"--native-file={native_file}"] if native_file.is_file() else []
     run(
-        ["meson", "setup", str(builddir), str(src), f"--prefix={prefix}", f"--cross-file={cross_file}"] + args,
+        ["meson", "setup", str(builddir), str(src), f"--prefix={prefix}", f"--cross-file={cross_file}"] + native_args + args,
         src,
         build_env,
     )
