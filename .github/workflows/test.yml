@@ -65,6 +65,7 @@ jobs:
           flutter pub get
           export LD_LIBRARY_PATH=$PWD/mpv_libs/linux/native
           MIMALLOC_VERBOSE=1 MIMALLOC_SHOW_STATS=1 dart tool/mimalloc_check.dart 2>&1 | tee /tmp/mimalloc-dart.log
+          cat /tmp/mimalloc-dart.log
         working-directory: tests/flutter
       - name: Run Playback Test
         run: |
