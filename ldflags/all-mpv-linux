@@ -1,3 +1,7 @@
 # static deps
 
 -lmimalloc
+
+# bind bundled malloc to libmpv itself under dlopen
+
+-Wl,-Bsymbolic-functions
