@@ -1,0 +1,7 @@
+# static deps
+
+-lass
+-lharfbuzz
+-lfribidi
+-lfreetype
+-ldav1d

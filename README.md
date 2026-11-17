@@ -57,7 +57,7 @@ python3 -m venv .venv
 
 ### Variants
 
-- `video` (TODO)
+- `video`
 - `audio`
 
 Release & debug symbol archives land in `dist/`.

@@ -1,0 +1,9 @@
+# video outputs
+
+-Dvulkan=enabled
+
+# hardware decoding
+
+-Ddrm=enabled
+-Dvaapi=enabled
+-Dvaapi-drm=enabled

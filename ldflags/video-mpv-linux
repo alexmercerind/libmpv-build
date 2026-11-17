@@ -1,0 +1,3 @@
+# bundled vulkan loader
+
+-Wl,-rpath,$ORIGIN
