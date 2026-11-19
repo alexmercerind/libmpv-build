@@ -726,8 +726,8 @@ def build_dependency(base: Path, dependency: Dependency, build_target: BuildTarg
     flags = get_flags(base, dependency.name, build_target, build_variant)
     # Upstream opt-out: float formatting without std::to_chars (missing at runtime on old iOS).
     build_env = {**build_env, "CXXFLAGS": f"{build_env['CXXFLAGS']} -DHAS_STD_TO_CHARS_FP=0"}
-    # Only mpv symbols stay public; support libraries build hidden
-    if dependency.name != "mpv":
+    # Only mpv and FFmpeg symbols stay public; support libraries build hidden
+    if dependency.name not in ("ffmpeg", "mpv"):
         build_env = {**build_env, "CFLAGS": build_env["CFLAGS"] + " -fvisibility=hidden", "CXXFLAGS": build_env["CXXFLAGS"] + " -fvisibility=hidden"}
     link = get_ldflags(base, dependency.name, build_target, build_variant)
     if link:
