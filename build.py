@@ -10,6 +10,8 @@ import stat
 import subprocess
 import sys
 import tarfile
+import tempfile
+import time
 import urllib.request
 import zipfile
 from dataclasses import dataclass
@@ -97,6 +99,7 @@ class BuildTool(str, Enum):
     CMAKE = "cmake"
     CONFIGURE = "configure"
     MESON = "meson"
+    PREBUILT = "prebuilt"
 
     def __str__(self):
         return self.value
@@ -145,6 +148,7 @@ class Dependency:
     tool: BuildTool
     dependencies: list[str]
     os: Optional[list[str]] = None
+    variants: Optional[list[str]] = None
 
 
 # ----------------------------------------------------------------------------
@@ -212,6 +216,19 @@ SYMBOLS_DIR = "symbols"
 ALL = "all"
 PREFIX = "prefix-"
 
+# Meson native file for darwin cross builds, generated on the fly instead of
+# checked in: build-machine tools must not inherit the target SDK from the
+# environment, or nothing built for the build machine can run.
+DARWIN_NATIVE_FILE = """\
+# macOS build-machine tools for cross builds. The build env targets the
+# OS SDK, so scrub it here for the helper tools that must run on macOS.
+
+[binaries]
+c = ['env', '-u', 'SDKROOT', '-u', 'CFLAGS', '-u', 'LDFLAGS', 'xcrun', '-sdk', 'macosx', 'clang']
+cpp = ['env', '-u', 'SDKROOT', '-u', 'CXXFLAGS', '-u', 'LDFLAGS', 'xcrun', '-sdk', 'macosx', 'clang++']
+ar = 'ar'
+"""
+
 # Host runtime
 JOBS = str(os.cpu_count() or 4)
 
@@ -232,16 +249,26 @@ def main() -> int:
     print(f"building {build_target} {build_variant}", flush=True)
     base = Path(__file__).resolve().parent
     check_host_compat(build_target)
-    dependencies = get_dependencies(base)
+    dependencies = get_dependencies(base, build_variant)
     cross_file = base / CROSS_DIR / f"{build_target}.txt"
     prefix = base / DEPS_DIR / f"{PREFIX}{build_target}"
+    native_file = None
+    if build_target.build_os == BuildOS.IOS or build_target.build_os == BuildOS.MACOS:
+        # Meson only accepts a file path, so spill the generated content
+        # to a temp file instead of the repo tree.
+        handle, path = tempfile.mkstemp(prefix=f"native-{build_target}-", suffix=".txt")
+        with os.fdopen(handle, "w") as file:
+            file.write(DARWIN_NATIVE_FILE)
+        native_file = Path(path)
     shutil.rmtree(prefix, ignore_errors=True)
     build_env = get_target_env(base, build_target, prefix)
     for dependency in dependencies:
         if dependency.os is not None and build_target.build_os.value not in dependency.os:
             continue
+        if dependency.variants is not None and build_variant.value not in dependency.variants:
+            continue
         print(f"building {dependency.name}", flush=True)
-        build_dependency(base, dependency, build_target, build_variant, cross_file, prefix, build_env)
+        build_dependency(base, dependency, build_target, build_variant, cross_file, native_file, prefix, build_env)
     split_debug(prefix, build_target, build_env)
     path = package_release(base, build_target, build_variant, prefix)
     debug_path = package_debug(base, build_target, build_variant, prefix)
@@ -256,7 +283,7 @@ def main() -> int:
 
 
 # Gets dependencies in topological build order
-def get_dependencies(base: Path) -> list[Dependency]:
+def get_dependencies(base: Path, build_variant: Optional[BuildVariant] = None) -> list[Dependency]:
     entries = {}
     for item in yaml.safe_load((base / DEPENDENCIES_FILE).read_text()):
         try:
@@ -271,7 +298,15 @@ def get_dependencies(base: Path) -> list[Dependency]:
             tool=tool,
             dependencies=item["dependencies"],
             os=item.get("os"),
+            variants=item.get("variants"),
         )
+    if build_variant is not None:
+        # Video-only dependencies (e.g. libass, dav1d) stay out of audio
+        # builds entirely; edges into them are pruned with the entry.
+        dropped = {name for name, entry in entries.items() if entry.variants is not None and build_variant.value not in entry.variants}
+        entries = {name: entry for name, entry in entries.items() if name not in dropped}
+        for entry in entries.values():
+            entry.dependencies = [edge for edge in entry.dependencies if edge not in dropped]
     for name, entry in entries.items():
         for edge in entry.dependencies:
             if edge not in entries:
@@ -718,7 +753,7 @@ def get_ldflags(base: Path, name: str, build_target: BuildTarget, build_variant:
 
 
 # Fetches, patches, and builds one dependency
-def build_dependency(base: Path, dependency: Dependency, build_target: BuildTarget, build_variant: BuildVariant, cross_file: Path, prefix: Path, build_env: BuildEnv) -> None:
+def build_dependency(base: Path, dependency: Dependency, build_target: BuildTarget, build_variant: BuildVariant, cross_file: Path, native_file: Optional[Path], prefix: Path, build_env: BuildEnv) -> None:
     src = fetch_dependency(base, dependency.name, dependency.url, dependency.sha256)
     for path in get_patch_files(base, dependency.name, build_target, build_variant):
         print(f"applying {path}", flush=True)
@@ -726,16 +761,26 @@ def build_dependency(base: Path, dependency: Dependency, build_target: BuildTarg
     flags = get_flags(base, dependency.name, build_target, build_variant)
     # Upstream opt-out: float formatting without std::to_chars (missing at runtime on old iOS).
     build_env = {**build_env, "CXXFLAGS": f"{build_env['CXXFLAGS']} -DHAS_STD_TO_CHARS_FP=0"}
-    # Only mpv symbols stay public; support libraries build hidden
+    # Only mpv symbols stay public; support libraries build hidden.
     if dependency.name != "mpv":
         build_env = {**build_env, "CFLAGS": build_env["CFLAGS"] + " -fvisibility=hidden", "CXXFLAGS": build_env["CXXFLAGS"] + " -fvisibility=hidden"}
     link = get_ldflags(base, dependency.name, build_target, build_variant)
     if link:
         build_env = {**build_env, "LDFLAGS": f"{build_env['LDFLAGS']} -L{prefix / 'lib'} {CXX_RUNTIME[build_target.build_os]} {' '.join(link)}".strip()}
+    elif build_variant == BuildVariant.VIDEO:
+        # Meson link-tests (e.g. libplacebo's glslang lookup) search the link
+        # path, not the pkg-config path; keep it hermetic for video builds.
+        build_env = {**build_env, "LDFLAGS": f"{build_env['LDFLAGS']} -L{prefix / 'lib'}"}
     if dependency.name == "ffmpeg":
         build_ffmpeg(src, build_target, prefix, flags, build_env)
+    elif dependency.name == "libplacebo" and build_variant == BuildVariant.VIDEO:
+        # Meson finds libraries only in its search dirs, not the prefix link
+        # path; point its glslang lookup (static libs, no pkg-config) there.
+        build_meson(src, prefix, cross_file, native_file, [*flags, f"-Dvulkan-sdk={prefix}"], build_env)
+    elif dependency.tool == BuildTool.PREBUILT:
+        build_prebuilt(base, dependency, src, build_target, prefix)
     elif dependency.tool == BuildTool.MESON:
-        build_meson(src, prefix, cross_file, flags, build_env)
+        build_meson(src, prefix, cross_file, native_file, flags, build_env)
     elif dependency.tool == BuildTool.CMAKE:
         build_cmake(src, build_target, prefix, flags, build_env)
     else:
@@ -749,13 +794,25 @@ def fetch_dependency(base: Path, name: str, url: str, sha: str) -> Path:
     archive = base / DEPS_DIR / url.rsplit("/", 1)[-1]
     download(url, sha, archive)
     unarchive(archive, dest)
+    flatten_single_top(dest)
+    return dest
+
+
+# Collapses a single top-level directory, laying its leaves in dest
+def flatten_single_top(dest: Path) -> None:
     kids = list(dest.iterdir())
     if len(kids) == 1 and kids[0].is_dir():
         inner = kids[0]
+        # Stage through a sibling directory: moving the inner tree's leaves
+        # straight into dest breaks when one shares the inner name itself
+        # (e.g. MoltenVK/MoltenVK), colliding with the directory moved from.
+        staging = dest.parent / f"{dest.name}.flattened"
+        shutil.rmtree(staging, ignore_errors=True)
+        staging.mkdir()
         for leaf in inner.iterdir():
-            shutil.move(str(leaf), str(dest))
-        inner.rmdir()
-    return dest
+            shutil.move(str(leaf), str(staging))
+        shutil.rmtree(dest)
+        staging.rename(dest)
 
 
 # Cross compiles and installs with FFmpeg configure
@@ -810,12 +867,61 @@ def build_ffmpeg(src: Path, build_target: BuildTarget, prefix: Path, args: list[
     run(["make", "install"], src, build_env)
 
 
+# MoltenVK static slice per Apple target; simulator slices ship no Vulkan
+MOLTENVK_SLICES = {
+    BuildTarget.MACOS_AMD64: "macos-arm64_x86_64",
+    BuildTarget.MACOS_ARM64: "macos-arm64_x86_64",
+    BuildTarget.IOS_ARM64: "ios-arm64",
+}
+
+
+# Installs a prebuilt upstream binary package (MoltenVK): no compilation,
+# just the static library for the target plus the vulkan pkg-config file
+# mpv and libplacebo look up. Headers come from the vendored Vulkan-Headers.
+def build_prebuilt(base: Path, dependency: Dependency, src: Path, build_target: BuildTarget, prefix: Path) -> None:
+    if dependency.name in ("moltenvk-ios", "moltenvk-macos"):
+        build_moltenvk(base, src, build_target, prefix)
+    else:
+        abort(f"no prebuilt installer: {dependency.name}")
+
+
+# Installs the MoltenVK static library matching the target
+def build_moltenvk(base: Path, src: Path, build_target: BuildTarget, prefix: Path) -> None:
+    if build_target not in MOLTENVK_SLICES:
+        # Simulator slices have no MoltenVK slice and no vulkan flags.
+        print(f"skipping moltenvk for {build_target}", flush=True)
+        return
+    # The tarball nests MoltenVK/MoltenVK, which the generic flattener leaves
+    # in place; locate the slice by name instead of assuming a layout.
+    original = next(leaf for leaf in src.rglob("libMoltenVK.a") if leaf.parent.name == MOLTENVK_SLICES[build_target])
+    (prefix / "lib").mkdir(parents=True, exist_ok=True)
+    shutil.copy(original, prefix / "lib" / "libMoltenVK.a")
+    headers = next(entry.version for entry in get_dependencies(base) if entry.name == "vulkan-headers")
+    (prefix / "lib" / "pkgconfig").mkdir(parents=True, exist_ok=True)
+    (prefix / "lib" / "pkgconfig" / "vulkan.pc").write_text(
+        f"""\
+prefix={prefix}
+libdir=${{prefix}}/lib
+includedir=${{prefix}}/include
+
+Name: vulkan
+Description: Vulkan headers with the MoltenVK implementation
+Version: {headers}
+Libs: -L${{libdir}} -lMoltenVK
+Cflags: -I${{includedir}}
+"""
+    )
+
+
 # Builds and installs with meson
-def build_meson(src: Path, prefix: Path, cross_file: Path, args: list[str], build_env: BuildEnv) -> None:
+def build_meson(src: Path, prefix: Path, cross_file: Path, native_file: Optional[Path], args: list[str], build_env: BuildEnv) -> None:
     builddir = src / BUILD_DIR
     shutil.rmtree(builddir, ignore_errors=True)
+    # A native file gives cross builds a working build-machine compiler for
+    # helper tools (e.g. fribidi codegen); targets without one are unaffected.
+    native_args = [f"--native-file={native_file}"] if native_file is not None else []
     run(
-        ["meson", "setup", str(builddir), str(src), f"--prefix={prefix}", f"--cross-file={cross_file}"] + args,
+        ["meson", "setup", str(builddir), str(src), f"--prefix={prefix}", f"--cross-file={cross_file}"] + native_args + args,
         src,
         build_env,
     )
@@ -842,10 +948,12 @@ def build_cmake(src: Path, build_target: BuildTarget, prefix: Path, args: list[s
             "-DCMAKE_SYSTEM_NAME=Windows",
             f"-DCMAKE_SYSTEM_PROCESSOR={processor}",
         ]
+    # Lets vendored cmake packages find each other (e.g. the vulkan loader
+    # needs the Vulkan-Headers config); harmless for self-contained deps.
     run(
         cmake_args + args + [str(src)],
         builddir,
-        build_env,
+        {**build_env, "CMAKE_PREFIX_PATH": str(prefix)},
     )
     run(["cmake", "--build", ".", "--parallel", JOBS], builddir, build_env)
     run(["cmake", "--install", "."], builddir, build_env)
@@ -1165,30 +1273,44 @@ def package_debug_linux(base: Path, build_target: BuildTarget, build_variant: Bu
 
 # Downloads a file
 def download(url: str, sha: str, dest: Path) -> None:
-    def matches() -> bool:
-        digest = hashlib.sha256()
+    def digest() -> Optional[str]:
+        if not dest.is_file():
+            return None
+        result = hashlib.sha256()
         with open(dest, "rb") as handle:
             for chunk in iter(lambda: handle.read(65536), b""):
-                digest.update(chunk)
-        return digest.hexdigest() == sha
+                result.update(chunk)
+        return result.hexdigest()
 
-    if dest.exists() and matches():
+    if digest() == sha:
         return
     # A stale or corrupt cache is refetched in the same run, not fatal.
-    if dest.exists():
-        dest.unlink()
+    dest.unlink(missing_ok=True)
     for attempt in (1, 2, 3):
         try:
-            with urllib.request.urlopen(url, timeout=120) as response, open(dest, "wb") as handle:
+            # Bust through poisoned egress caches: some runners received
+            # stale bytes for one asset while the origin serves the pinned
+            # hash everywhere else.
+            request = urllib.request.Request(
+                url,
+                headers={
+                    "User-Agent": "libmpv-build",
+                    "Accept": "*/*",
+                    "Cache-Control": "no-cache",
+                },
+            )
+            with urllib.request.urlopen(request, timeout=120) as response, open(dest, "wb") as handle:
                 shutil.copyfileobj(response, handle)
         except (OSError, ValueError):
             if attempt == 3:
                 raise
-            continue
-        if matches():
-            return
-        dest.unlink(missing_ok=True)
-    abort(f"bad sha256: {dest}")
+        else:
+            if digest() == sha:
+                return
+            dest.unlink(missing_ok=True)
+        if attempt < 3:
+            time.sleep(5 * attempt)
+    abort(f"bad sha256: {dest} (want {sha}, got {digest()})")
 
 
 # Archives a zip file

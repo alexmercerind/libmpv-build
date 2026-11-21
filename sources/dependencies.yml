@@ -1,3 +1,10 @@
+- name: dav1d
+  version: 1.5.4
+  url: https://code.videolan.org/videolan/dav1d/-/archive/1.5.4/dav1d-1.5.4.tar.bz2
+  sha256: 2abfb0c89212e6e4733a54e0ae509ec00a5b845a6360946f918806e14aedb011
+  tool: meson
+  dependencies: []
+  variants: [video]
 - name: fast-float
   version: 8.2.2
   url: https://github.com/fastfloat/fast_float/archive/refs/tags/v8.2.2.tar.gz
@@ -10,9 +17,70 @@
   sha256: 8c3850283eb25fa026482078a04051e0be17347b09ef81a0849bec15a96e002e
   tool: configure
   dependencies:
+    - dav1d
     - libxml2
     - mbedtls
+    - moltenvk-ios
+    - moltenvk-macos
+    - vulkan-loader
     - zlib
+- name: freetype
+  version: 2.15.0
+  url: https://download.savannah.gnu.org/releases/freetype/freetype-2.15.0.tar.xz
+  sha256: 93cd47eb719c325107f2d3cf087d06299e944c3b48a40b55537302304dea1dd5
+  tool: meson
+  dependencies:
+    - zlib
+  variants: [video]
+- name: fribidi
+  version: 1.0.18
+  url: https://github.com/fribidi/fribidi/releases/download/v1.0.18/fribidi-1.0.18.tar.xz
+  sha256: 1de5e8073d035388b71d0b2d452b1da1f8caeea8a7702997b401fe1b6250727f
+  tool: meson
+  dependencies: []
+  variants: [video]
+- name: glslang
+  version: 1.4.363.0
+  url: https://github.com/KhronosGroup/glslang/archive/refs/tags/vulkan-sdk-1.4.363.0.tar.gz
+  sha256: cda24ec765e6d2845d106b7caa593f34127195a88524cf87821ff0088fb6edec
+  tool: cmake
+  dependencies: []
+  os: [ios, linux, macos, windows]
+  variants: [video]
+- name: harfbuzz
+  version: 15.1.0
+  url: https://github.com/harfbuzz/harfbuzz/releases/download/15.1.0/harfbuzz-15.1.0.tar.xz
+  sha256: 0fc7c565443a5f4be7da65ac5ee5bd737d9b158dc908708b7689a0a5796b0c8d
+  tool: meson
+  dependencies:
+    - freetype
+  variants: [video]
+- name: libdisplay-info
+  version: 0.4.0
+  url: https://gitlab.freedesktop.org/emersion/libdisplay-info/-/archive/0.4.0/libdisplay-info-0.4.0.tar.gz
+  sha256: 787b58aec473830b0030251ba2b880560b4b3853dc5d6961a6e9701abae29b55
+  tool: meson
+  dependencies: []
+  os: [linux]
+  variants: [video]
+- name: libdrm
+  version: 2.4.134
+  url: https://gitlab.freedesktop.org/mesa/drm/-/archive/libdrm-2.4.134/drm-libdrm-2.4.134.tar.bz2
+  sha256: be216ba675f172e8e7cf908c7da85e3d76cb84ae1cb98e4c7e6089e487a2ec99
+  tool: meson
+  dependencies: []
+  os: [linux]
+  variants: [video]
+- name: libass
+  version: 0.17.5
+  url: https://github.com/libass/libass/releases/download/0.17.5/libass-0.17.5.tar.gz
+  sha256: caab4b993dd7be6187c55623b789ed75dddefea6e65938af134637c732fe094a
+  tool: meson
+  dependencies:
+    - freetype
+    - fribidi
+    - harfbuzz
+  variants: [video]
 - name: libplacebo
   version: 7.387.0
   url: https://github.com/haasn/libplacebo/archive/refs/tags/v7.387.0.tar.gz
@@ -20,7 +88,11 @@
   tool: meson
   dependencies:
     - fast-float
+    - glslang
+    - moltenvk-ios
+    - moltenvk-macos
     - vulkan-headers
+    - vulkan-loader
 - name: libxml2
   version: 2.15.4
   url: https://download.gnome.org/sources/libxml2/2.15/libxml2-2.15.4.tar.xz
@@ -41,6 +113,22 @@
   tool: cmake
   dependencies: []
   os: [linux]
+- name: moltenvk-ios
+  version: 1.4.2
+  url: https://github.com/KhronosGroup/MoltenVK/releases/download/v1.4.2/MoltenVK-ios.tar
+  sha256: b5d947b1660e6e9fed40b9cd2387e160aaab9e80b775c0cef7e14059405178c1
+  tool: prebuilt
+  dependencies: []
+  os: [ios]
+  variants: [video]
+- name: moltenvk-macos
+  version: 1.4.2
+  url: https://github.com/KhronosGroup/MoltenVK/releases/download/v1.4.2/MoltenVK-macos.tar
+  sha256: f95765a6229cb7b915990a2890ce12ebe36a730b021545d3d52ae69ce4c4024e
+  tool: prebuilt
+  dependencies: []
+  os: [macos]
+  variants: [video]
 - name: mpv
   version: 0.42.0
   url: https://github.com/mpv-player/mpv/archive/refs/tags/v0.42.0.tar.gz
@@ -48,7 +136,13 @@
   tool: meson
   dependencies:
     - ffmpeg
+    - libass
+    - libdisplay-info
+    - libdrm
     - libplacebo
+    - moltenvk-ios
+    - moltenvk-macos
+    - vulkan-loader
     - zlib
 - name: vulkan-headers
   version: 1.4.368
@@ -56,6 +150,15 @@
   sha256: 5c5c6f64fcce28a24cc934143a048707af036a858e4ed11d7f71fe016006ecda
   tool: cmake
   dependencies: []
+- name: vulkan-loader
+  version: 1.4.363.0
+  url: https://github.com/KhronosGroup/Vulkan-Loader/archive/refs/tags/vulkan-sdk-1.4.363.0.zip
+  sha256: 1a8d884bd50e8455f7a542dd8f18f78375a2093b6f3d03426c249a22d77d4298
+  tool: cmake
+  dependencies:
+    - vulkan-headers
+  os: [linux, windows]
+  variants: [video]
 - name: zlib
   version: 1.3.1
   url: https://github.com/madler/zlib/releases/download/v1.3.1/zlib-1.3.1.tar.gz

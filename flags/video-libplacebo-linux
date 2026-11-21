@@ -1,0 +1,4 @@
+# vulkan renderer
+
+-Dglslang=enabled
+-Dvulkan=enabled

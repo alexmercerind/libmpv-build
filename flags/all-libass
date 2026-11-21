@@ -1,0 +1,13 @@
+# base options
+
+-Dcheckasm=disabled
+-Dcompare=disabled
+-Dcoretext=disabled
+-Ddirectwrite=disabled
+-Dfontconfig=disabled
+-Dfuzz=disabled
+-Dlibunibreak=disabled
+-Dprofile=disabled
+-Drequire-system-font-provider=false
+-Dtest=disabled
+-Ddefault_library=static

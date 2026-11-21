@@ -1,0 +1,18 @@
+# no kms backends or test programs
+
+-Damdgpu=disabled
+-Dcairo-tests=disabled
+-Detnaviv=disabled
+-Dexynos=disabled
+-Dfreedreno=disabled
+-Dintel=disabled
+-Dman-pages=disabled
+-Dnouveau=disabled
+-Domap=disabled
+-Dradeon=disabled
+-Dtegra=disabled
+-Dtests=false
+-Dvalgrind=disabled
+-Dvc4=disabled
+-Dvmwgfx=disabled
+-Ddefault_library=static

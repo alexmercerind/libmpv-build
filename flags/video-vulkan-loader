@@ -1,0 +1,4 @@
+# build options
+
+-DBUILD_TESTS=OFF
+-DCMAKE_BUILD_TYPE=Release
