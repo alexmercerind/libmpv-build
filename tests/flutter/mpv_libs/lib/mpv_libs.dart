@@ -67,10 +67,10 @@ final class MpvNodeValue extends Union {
 }
 
 final class MpvNode extends Struct {
+  external MpvNodeValue u;
+
   @Int32()
   external int format;
-
-  external MpvNodeValue u;
 }
 
 final class MpvNodeList extends Struct {
