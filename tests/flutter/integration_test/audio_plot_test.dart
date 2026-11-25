@@ -135,7 +135,6 @@ void main() {
     // The pump must stop even when an expect above throws; otherwise the
     // periodic timer keeps the test process alive and the CI step hangs.
     try {
-      // Wait for the first subscribed pcm/fft updates, plus the JSON copy.
       for (int i = 0; i < 20 && !(pcmLive && fftLive && jsonLive); i++) {
         await Future<void>.delayed(const Duration(milliseconds: 500));
       }
@@ -143,10 +142,8 @@ void main() {
       expect(fftLive, isTrue, reason: 'no audio-fft update received');
       expect(jsonLive, isTrue, reason: 'no audio-fft JSON update received');
 
-      // Unsubscribe: no more pcm/fft node events must arrive while the rate
-      // stays configured, proving the tap idles when nobody listens. The JSON
-      // observation (separate userdata) keeps flowing, proving mpv_unobserve_property
-      // is selective.
+      // Unsubscribe: node events must stop while the JSON observation on
+      // separate userdata keeps flowing.
       expect(mpvUnobserveProperty(handle, kPlotUserdata), 2);
       final int quietPcm = pcmEvents;
       final int quietFft = fftEvents;
