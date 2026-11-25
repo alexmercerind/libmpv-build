@@ -1,0 +1,533 @@
+diff -ruN a/options/options.c b/options/options.c
+--- a/options/options.c	2026-11-26 00:10:29
++++ b/options/options.c	2026-11-26 00:13:49
+@@ -694,6 +694,7 @@
+         M_RANGE(0, 16*48000)},
+     {"audio-channels", OPT_CHANNELS(audio_output_channels), .flags = UPDATE_AUDIO},
+     {"audio-format", OPT_AUDIOFORMAT(audio_output_format), .flags = UPDATE_AUDIO},
++    {"audio-plot-rate", OPT_INT(audio_plot_rate), M_RANGE(0, 48000)},
+     {"speed", OPT_DOUBLE(playback_speed), M_RANGE(0.01, 100.0)},
+     {"pitch", OPT_DOUBLE(playback_pitch), M_RANGE(0.01, 100.0)},
+ 
+diff -ruN a/options/options.h b/options/options.h
+--- a/options/options.h	2026-11-26 00:10:29
++++ b/options/options.h	2026-11-26 00:13:49
+@@ -209,6 +209,7 @@
+     bool ao_null_fallback;
+     bool audio_stream_silence;
+     float audio_wait_open;
++    int audio_plot_rate;
+     int force_vo;
+     float softvol_volume;
+     int rgain_mode;
+diff -ruN a/player/audio.c b/player/audio.c
+--- a/player/audio.c	2026-11-26 00:10:29
++++ b/player/audio.c	2026-11-26 01:44:21
+@@ -21,13 +21,24 @@
+ #include <limits.h>
+ #include <math.h>
+ #include <assert.h>
++#include <string.h>
+ 
++#include <libavutil/channel_layout.h>
++#include <libavutil/mem.h>
++#include <libavutil/opt.h>
++#include <libavutil/samplefmt.h>
++#include <libavutil/tx.h>
++#include <libswresample/swresample.h>
++
+ #include "mpv_talloc.h"
+ 
+ #include "common/msg.h"
+ #include "common/encode.h"
++#include "options/m_option.h"
++#include "options/m_property.h"
+ #include "options/options.h"
+ #include "common/common.h"
++#include "misc/node.h"
+ #include "osdep/timer.h"
+ 
+ #include "audio/format.h"
+@@ -39,6 +50,7 @@
+ 
+ #include "core.h"
+ #include "command.h"
++#include "client.h"
+ 
+ enum {
+     AD_OK = 0,
+@@ -48,6 +60,345 @@
+ 
+ static void ao_process(struct mp_filter *f);
+ 
++enum {
++    AUDIO_PLOT_PCM_MAX = 2048,
++    AUDIO_PLOT_FFT_LEN = 1024,
++    AUDIO_PLOT_FFT_BINS = AUDIO_PLOT_FFT_LEN / 2 + 1,
++};
++
++// PCM/FFT tap behind the audio-pcm and audio-fft properties, fed from
++// ao_process() and idle unless audio-plot-rate is set and either property is
++// observed. Runs on the core thread (property reads are serialized through
++// the client dispatch lock), so no extra locking is taken.
++struct audio_plot {
++    int rate;
++    bool was_observed;
++    float pcm[AUDIO_PLOT_PCM_MAX];
++    int pcm_num;
++    double pcm_notified;
++    float fft[AUDIO_PLOT_FFT_BINS];
++    int fft_num;
++    int swr_in_rate;
++    int swr_out_rate;
++    struct SwrContext *swr;
++    float *scratch;
++    int scratch_size;
++    float *resampled;
++    int resampled_size;
++    float *accum;
++    int accum_size;
++    int accum_num;
++    AVTXContext *tx;
++    av_tx_fn tx_fn;
++    float *tx_in;           // av_malloc'ed for transform alignment
++    AVComplexFloat *tx_out;
++};
++
++static bool audio_plot_grow(struct audio_plot *plot, float **buf, int *size,
++                            int need)
++{
++    if (need <= *size)
++        return true;
++    float *nd = talloc_realloc(plot, *buf, float, need);
++    if (!nd)
++        return false;
++    *buf = nd;
++    *size = need;
++    return true;
++}
++
++static float audio_plot_read_sample(int format, const uint8_t *p)
++{
++    switch (format) {
++    case AF_FORMAT_U8:
++        return ((int)p[0] - 128) / 128.0f;
++    case AF_FORMAT_S16: {
++        int16_t v;
++        memcpy(&v, p, sizeof(v));
++        return v / 32768.0f;
++    }
++    case AF_FORMAT_S32: {
++        int32_t v;
++        memcpy(&v, p, sizeof(v));
++        return v / 2147483648.0f;
++    }
++    case AF_FORMAT_S64: {
++        int64_t v;
++        memcpy(&v, p, sizeof(v));
++        return (float)(v / 9223372036854775808.0);
++    }
++    case AF_FORMAT_FLOAT: {
++        float v;
++        memcpy(&v, p, sizeof(v));
++        return v;
++    }
++    case AF_FORMAT_DOUBLE: {
++        double v;
++        memcpy(&v, p, sizeof(v));
++        return (float)v;
++    }
++    }
++    return 0;
++}
++
++static void audio_plot_reset_converters(struct audio_plot *plot)
++{
++    swr_free(&plot->swr);
++    plot->swr_in_rate = 0;
++    plot->swr_out_rate = 0;
++    plot->accum_num = 0;
++}
++
++static void audio_plot_uninit(struct ao_chain *ao_c)
++{
++    struct audio_plot *plot = ao_c->plot;
++    if (!plot)
++        return;
++    audio_plot_reset_converters(plot);
++    av_tx_uninit(&plot->tx);
++    av_free(plot->tx_in);
++    av_free(plot->tx_out);
++    plot->tx_in = NULL;
++    plot->tx_out = NULL;
++    ao_c->plot = NULL; // scratch buffers go away with ao_c itself
++}
++
++static bool audio_plot_setup_swr(struct audio_plot *plot, int in_rate,
++                                 int out_rate)
++{
++    audio_plot_reset_converters(plot);
++    struct SwrContext *swr = swr_alloc();
++    if (!swr)
++        return false;
++    const AVChannelLayout mono = {
++        .order = AV_CHANNEL_ORDER_UNSPEC,
++        .nb_channels = 1,
++    };
++    av_opt_set_chlayout(swr, "in_chlayout", &mono, 0);
++    av_opt_set_chlayout(swr, "out_chlayout", &mono, 0);
++    av_opt_set_int(swr, "in_sample_rate", in_rate, 0);
++    av_opt_set_int(swr, "out_sample_rate", out_rate, 0);
++    av_opt_set_int(swr, "in_sample_fmt", AV_SAMPLE_FMT_FLT, 0);
++    av_opt_set_int(swr, "out_sample_fmt", AV_SAMPLE_FMT_FLT, 0);
++    if (swr_init(swr) < 0) {
++        swr_free(&swr);
++        return false;
++    }
++    plot->swr = swr;
++    plot->swr_in_rate = in_rate;
++    plot->swr_out_rate = out_rate;
++    return true;
++}
++
++static bool audio_plot_setup_tx(struct audio_plot *plot)
++{
++    float scale = 1.0f / AUDIO_PLOT_FFT_LEN;
++    if (av_tx_init(&plot->tx, &plot->tx_fn, AV_TX_FLOAT_RDFT, 0,
++                   AUDIO_PLOT_FFT_LEN, &scale, 0) < 0)
++        return false;
++    plot->tx_in = av_malloc(AUDIO_PLOT_FFT_LEN * sizeof(float));
++    plot->tx_out = av_malloc(AUDIO_PLOT_FFT_BINS * sizeof(*plot->tx_out));
++    if (!plot->tx_in || !plot->tx_out) {
++        av_tx_uninit(&plot->tx);
++        av_free(plot->tx_in);
++        av_free(plot->tx_out);
++        plot->tx_in = NULL;
++        plot->tx_out = NULL;
++        return false;
++    }
++    return true;
++}
++
++// Downmix one decoded frame to mono, resample to audio-plot-rate, and feed
++// both the pcm snapshot and the FFT accumulator from the resampled stream.
++static void audio_plot_push(struct MPContext *mpctx, struct mp_aframe *af)
++{
++    struct ao_chain *ao_c = mpctx->ao_chain;
++    if (!ao_c || !ao_c->plot)
++        return;
++    struct audio_plot *plot = ao_c->plot;
++    int rate = mpctx->opts->audio_plot_rate;
++
++    if (rate <= 0)
++        return;
++    bool observed = mp_is_property_observed(mpctx, "audio-pcm") ||
++                    mp_is_property_observed(mpctx, "audio-fft");
++    if (!observed) {
++        plot->was_observed = false;
++        return;
++    }
++    if (!plot->was_observed || plot->rate != rate) {
++        plot->pcm_num = 0;
++        plot->fft_num = 0;
++        audio_plot_reset_converters(plot);
++        plot->rate = rate;
++        plot->was_observed = true;
++    }
++
++    int format = mp_aframe_get_format(af);
++    if (!af_fmt_is_pcm(format))
++        return;
++    int base = af_fmt_from_planar(format);
++    switch (base) {
++    case AF_FORMAT_U8:
++    case AF_FORMAT_S16:
++    case AF_FORMAT_S32:
++    case AF_FORMAT_S64:
++    case AF_FORMAT_FLOAT:
++    case AF_FORMAT_DOUBLE:
++        break;
++    default:
++        return;
++    }
++    int frames = mp_aframe_get_size(af);
++    if (frames <= 0)
++        return;
++    int channels = mp_aframe_get_channels(af);
++    uint8_t **data = mp_aframe_get_data_ro(af);
++    if (!data || channels <= 0)
++        return;
++    if (!audio_plot_grow(plot, &plot->scratch, &plot->scratch_size, frames))
++        return;
++    bool planar = af_fmt_is_planar(format);
++    int bytes = af_fmt_to_bytes(format);
++    size_t sstride = mp_aframe_get_sstride(af);
++    for (int i = 0; i < frames; i++) {
++        double sum = 0;
++        for (int c = 0; c < channels; c++) {
++            const uint8_t *p = planar ? data[c] + (size_t)i * bytes
++                                      : data[0] + (size_t)i * sstride +
++                                        (size_t)c * bytes;
++            sum += audio_plot_read_sample(base, p);
++        }
++        plot->scratch[i] = (float)(sum / channels);
++    }
++
++    int in_rate = mp_aframe_get_rate(af);
++    if (in_rate <= 0)
++        return;
++    if (!plot->swr || plot->swr_in_rate != in_rate ||
++        plot->swr_out_rate != rate)
++    {
++        if (!audio_plot_setup_swr(plot, in_rate, rate))
++            return;
++    }
++    if (!plot->tx && !audio_plot_setup_tx(plot))
++        return;
++    int out_space = (int)((int64_t)frames * rate / in_rate + 32);
++    if (!audio_plot_grow(plot, &plot->resampled, &plot->resampled_size,
++                         out_space))
++        return;
++    const uint8_t *in_planes[1] = {(const uint8_t *)plot->scratch};
++    uint8_t *out_planes[1] = {(uint8_t *)plot->resampled};
++    int got = swr_convert(plot->swr, out_planes, out_space, in_planes, frames);
++    if (got <= 0)
++        return;
++
++    if (got >= AUDIO_PLOT_PCM_MAX) {
++        memcpy(plot->pcm, plot->resampled + got - AUDIO_PLOT_PCM_MAX,
++               AUDIO_PLOT_PCM_MAX * sizeof(float));
++        plot->pcm_num = AUDIO_PLOT_PCM_MAX;
++    } else {
++        int keep = plot->pcm_num;
++        if (keep + got > AUDIO_PLOT_PCM_MAX) {
++            int drop = keep + got - AUDIO_PLOT_PCM_MAX;
++            memmove(plot->pcm, plot->pcm + drop,
++                    (keep - drop) * sizeof(float));
++            keep -= drop;
++        }
++        memcpy(plot->pcm + keep, plot->resampled, got * sizeof(float));
++        plot->pcm_num = keep + got;
++    }
++    double now = mp_time_sec();
++    if (now - plot->pcm_notified >= 1.0 / 30.0) {
++        plot->pcm_notified = now;
++        mp_notify_property(mpctx, "audio-pcm");
++    }
++
++    if (!audio_plot_grow(plot, &plot->accum, &plot->accum_size,
++                         plot->accum_num + got))
++        return;
++    memcpy(plot->accum + plot->accum_num, plot->resampled,
++           got * sizeof(float));
++    plot->accum_num += got;
++    while (plot->accum_num >= AUDIO_PLOT_FFT_LEN) {
++        memcpy(plot->tx_in, plot->accum,
++               AUDIO_PLOT_FFT_LEN * sizeof(float));
++        plot->tx_fn(plot->tx, plot->tx_out, plot->tx_in, sizeof(float));
++        for (int n = 0; n < AUDIO_PLOT_FFT_BINS; n++) {
++            float re = plot->tx_out[n].re;
++            float im = plot->tx_out[n].im;
++            plot->fft[n] = sqrtf(re * re + im * im);
++        }
++        plot->fft_num = AUDIO_PLOT_FFT_BINS;
++        plot->accum_num -= AUDIO_PLOT_FFT_LEN;
++        memmove(plot->accum, plot->accum + AUDIO_PLOT_FFT_LEN,
++                plot->accum_num * sizeof(float));
++        mp_notify_property(mpctx, "audio-fft");
++    }
++}
++
++static int audio_plot_property(struct MPContext *mpctx, int action, void *arg,
++                               const float *buf, int num, bool enabled)
++{
++    switch (action) {
++    case M_PROPERTY_GET_TYPE:
++        *(struct m_option *)arg = (struct m_option){.type = CONF_TYPE_NODE};
++        return M_PROPERTY_OK;
++    case M_PROPERTY_GET:
++    case M_PROPERTY_GET_NODE: // same as GET, because type==mpv_node
++    case M_PROPERTY_GET_STRING: // compact JSON array
++    case M_PROPERTY_PRINT: // pretty JSON array
++        break;
++    default:
++        return M_PROPERTY_NOT_IMPLEMENTED;
++    }
++    struct ao_chain *ao_c = mpctx->ao_chain;
++    if (!enabled || !ao_c || !ao_c->plot || !num)
++        return M_PROPERTY_UNAVAILABLE;
++    struct mpv_node node;
++    node_init(&node, MPV_FORMAT_NODE_ARRAY, NULL);
++    for (int n = 0; n < num; n++)
++        node_array_add(&node, MPV_FORMAT_DOUBLE)->u.double_ = buf[n];
++    if (action == M_PROPERTY_GET_STRING || action == M_PROPERTY_PRINT) {
++        struct m_option node_opt = {.type = CONF_TYPE_NODE};
++        char *s = action == M_PROPERTY_GET_STRING
++                      ? m_option_print(&node_opt, &node)
++                      : m_option_pretty_print(&node_opt, &node, false);
++        m_option_free(&node_opt, &node);
++        if (!s)
++            return M_PROPERTY_UNAVAILABLE;
++        *(char **)arg = s;
++        return M_PROPERTY_OK;
++    }
++    *(struct mpv_node *)arg = node;
++    return M_PROPERTY_OK;
++}
++
++int mp_property_audio_pcm(void *ctx, struct m_property *prop, int action,
++                          void *arg)
++{
++    struct MPContext *mpctx = ctx;
++    struct ao_chain *ao_c = mpctx->ao_chain;
++    struct audio_plot *plot = ao_c ? ao_c->plot : NULL;
++    return audio_plot_property(mpctx, action, arg,
++                               plot ? plot->pcm : NULL,
++                               plot ? plot->pcm_num : 0,
++                               mpctx->opts->audio_plot_rate > 0);
++}
++
++int mp_property_audio_fft(void *ctx, struct m_property *prop, int action,
++                          void *arg)
++{
++    struct MPContext *mpctx = ctx;
++    struct ao_chain *ao_c = mpctx->ao_chain;
++    struct audio_plot *plot = ao_c ? ao_c->plot : NULL;
++    return audio_plot_property(mpctx, action, arg,
++                               plot ? plot->fft : NULL,
++                               plot ? plot->fft_num : 0,
++                               mpctx->opts->audio_plot_rate > 0);
++}
++
+ static void update_speed_filters(struct MPContext *mpctx)
+ {
+     struct ao_chain *ao_c = mpctx->ao_chain;
+@@ -266,6 +617,7 @@
+ 
+ static void ao_chain_uninit(struct ao_chain *ao_c)
+ {
++    audio_plot_uninit(ao_c);
+     struct track *track = ao_c->track;
+     if (track) {
+         mp_assert(track->ao_c == ao_c);
+@@ -615,6 +967,7 @@
+     ao_c->spdif_passthrough = true;
+     ao_c->last_out_pts = MP_NOPTS_VALUE;
+     ao_c->delay = mpctx->opts->audio_delay;
++    ao_c->plot = talloc_zero(ao_c, struct audio_plot);
+ 
+     ao_c->ao_filter = mp_filter_create(mpctx->filter_root, &ao_filter);
+     if (!ao_c->filter || !ao_c->ao_filter)
+@@ -751,6 +1104,8 @@
+             mp_frame_unref(&frame);
+             return;
+         }
++
++        audio_plot_push(mpctx, af);
+ 
+         mpctx->shown_aframes += samples;
+         double real_samplerate = mp_aframe_get_rate(af) / mpctx->audio_speed;
+diff -ruN a/player/client.c b/player/client.c
+--- a/player/client.c	2026-11-26 00:10:29
++++ b/player/client.c	2026-11-26 01:44:12
+@@ -1662,6 +1662,33 @@
+         mp_dispatch_adjust_timeout(mpctx->dispatch, 0);
+ }
+ 
++// True if any client currently observes the given property, so the
++// audio-pcm/audio-fft tap can stay idle unless somebody listens.
++bool mp_is_property_observed(struct MPContext *mpctx, const char *name)
++{
++    struct mp_client_api *clients = mpctx->clients;
++    int id = mp_get_property_id(mpctx, name);
++    if (id < 0)
++        return false;
++    bool res = false;
++    mp_mutex_lock(&clients->lock);
++    for (int n = 0; n < clients->num_clients && !res; n++) {
++        struct mpv_handle *client = clients->clients[n];
++        mp_mutex_lock(&client->lock);
++        for (int i = 0; i < client->num_properties; i++) {
++            if (client->properties[i]->id == id &&
++                property_shared_prefix(name, client->properties[i]->name))
++            {
++                res = true;
++                break;
++            }
++        }
++        mp_mutex_unlock(&client->lock);
++    }
++    mp_mutex_unlock(&clients->lock);
++    return res;
++}
++
+ // Mark properties as changed in reaction to specific events.
+ // Called with ctx->lock held.
+ static void notify_property_events(struct mpv_handle *ctx, int event)
+diff -ruN a/player/client.h b/player/client.h
+--- a/player/client.h	2026-11-26 00:10:29
++++ b/player/client.h	2026-11-26 00:15:37
+@@ -30,6 +30,7 @@
+                              int event, void *data);
+ void mp_client_property_change(struct MPContext *mpctx, const char *name);
+ void mp_client_send_property_changes(struct MPContext *mpctx);
++bool mp_is_property_observed(struct MPContext *mpctx, const char *name);
+ 
+ struct mpv_handle *mp_new_client(struct mp_client_api *clients, const char *name);
+ struct mpv_handle *mp_new_weak_client(struct mp_client_api *clients, const char *name);
+diff -ruN a/player/command.c b/player/command.c
+--- a/player/command.c	2026-11-26 00:10:29
++++ b/player/command.c	2026-11-26 00:11:42
+@@ -4784,6 +4784,8 @@
+     {"audio-device", mp_property_audio_device},
+     {"audio-device-list", mp_property_audio_devices},
+     {"current-ao", mp_property_ao},
++    {"audio-pcm", mp_property_audio_pcm},
++    {"audio-fft", mp_property_audio_fft},
+ 
+     // Video
+     {"video-target-params", mp_property_tgt_imgparams},
+diff -ruN a/player/command.h b/player/command.h
+--- a/player/command.h	2026-11-26 00:10:29
++++ b/player/command.h	2026-11-26 00:11:42
+@@ -28,6 +28,7 @@
+ struct mp_log;
+ struct mpv_node;
+ struct m_config_option;
++struct m_property;
+ 
+ void command_init(struct MPContext *mpctx);
+ void command_uninit(struct MPContext *mpctx);
+@@ -85,6 +86,12 @@
+ void property_print_help(struct MPContext *mpctx);
+ int mp_property_do(const char* name, int action, void* val,
+                    struct MPContext *mpctx);
++
++// PCM/FFT tap (player/audio.c): observed with MPV_FORMAT_NODE, no new API.
++int mp_property_audio_pcm(void *ctx, struct m_property *prop, int action,
++                          void *arg);
++int mp_property_audio_fft(void *ctx, struct m_property *prop, int action,
++                          void *arg);
+ 
+ void mp_option_change_callback(void *ctx, struct m_config_option *co, uint64_t flags,
+                                bool self_update);
+diff -ruN a/player/core.h b/player/core.h
+--- a/player/core.h	2026-11-26 00:10:29
++++ b/player/core.h	2026-11-26 01:44:12
+@@ -185,6 +185,7 @@
+     bool underrun_signaled;
+ };
+ 
++struct audio_plot;
+ // Like vo_chain, for audio.
+ struct ao_chain {
+     struct mp_log *log;
+@@ -217,6 +218,8 @@
+ 
+     bool ao_underrun;   // last known AO state
+     bool underrun;      // for cache pause logic
++
++    struct audio_plot *plot; // NULL if unused
+ };
+ 
+ /* Note that playback can be paused, stopped, etc. at any time. While paused,

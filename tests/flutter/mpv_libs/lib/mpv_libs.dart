@@ -5,9 +5,12 @@ import 'package:ffi/ffi.dart';
 
 const kEventPlaybackRestart = 21;
 const kEventPropertyChange = 22;
+const kFormatNone = 0;
+const kFormatString = 1;
 const kFormatFlag = 3;
 const kFormatDouble = 5;
 const kFormatNode = 6;
+const kFormatNodeArray = 7;
 
 typedef _MpvCommandC = Int32 Function(Pointer<Void>, Pointer<Utf8>);
 typedef _MpvCommandFn = int Function(Pointer<Void>, Pointer<Utf8>);
@@ -19,6 +22,8 @@ typedef _MpvInitializeC = Int32 Function(Pointer<Void>);
 typedef _MpvInitializeFn = int Function(Pointer<Void>);
 typedef _MpvObserveC = Int32 Function(Pointer<Void>, Uint64, Pointer<Utf8>, Int32);
 typedef _MpvObserveFn = int Function(Pointer<Void>, int, Pointer<Utf8>, int);
+typedef _MpvUnobserveC = Int32 Function(Pointer<Void>, Uint64);
+typedef _MpvUnobserveFn = int Function(Pointer<Void>, int);
 typedef _MpvOptionC = Int32 Function(Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>);
 typedef _MpvOptionFn = int Function(Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>);
 typedef _MpvWaitC = Pointer<MpvEvent> Function(Pointer<Void>, Double);
@@ -46,11 +51,43 @@ final class MpvEventProperty extends Struct {
   external Pointer<Void> data;
 }
 
+final class MpvNodeValue extends Union {
+  external Pointer<Utf8> string;
+
+  @Int32()
+  external int flag;
+
+  @Int64()
+  external int int64;
+
+  @Double()
+  external double double_;
+
+  external Pointer<MpvNodeList> list;
+}
+
+final class MpvNode extends Struct {
+  external MpvNodeValue u;
+
+  @Int32()
+  external int format;
+}
+
+final class MpvNodeList extends Struct {
+  @Int32()
+  external int num;
+
+  external Pointer<MpvNode> values;
+
+  external Pointer<Pointer<Utf8>> keys;
+}
+
 late final _MpvCommandFn _mpvCommand;
 late final _MpvCreateFn _mpvCreate;
 late final _MpvDestroyFn _mpvDestroy;
 late final _MpvInitializeFn _mpvInitialize;
 late final _MpvObserveFn _mpvObserve;
+late final _MpvUnobserveFn _mpvUnobserve;
 late final _MpvOptionFn _mpvSetOption;
 late final _MpvOptionFn _mpvSetProperty;
 late final _MpvWaitFn _mpvWaitEvent;
@@ -68,6 +105,7 @@ void mpvInit(DynamicLibrary lib) {
   _mpvDestroy = lib.lookupFunction<_MpvDestroyC, _MpvDestroyFn>('mpv_terminate_destroy');
   _mpvInitialize = lib.lookupFunction<_MpvInitializeC, _MpvInitializeFn>('mpv_initialize');
   _mpvObserve = lib.lookupFunction<_MpvObserveC, _MpvObserveFn>('mpv_observe_property');
+  _mpvUnobserve = lib.lookupFunction<_MpvUnobserveC, _MpvUnobserveFn>('mpv_unobserve_property');
   _mpvSetOption = lib.lookupFunction<_MpvOptionC, _MpvOptionFn>('mpv_set_option_string');
   _mpvSetProperty = lib.lookupFunction<_MpvOptionC, _MpvOptionFn>('mpv_set_property_string');
   _mpvWaitEvent = lib.lookupFunction<_MpvWaitC, _MpvWaitFn>('mpv_wait_event');
@@ -92,11 +130,16 @@ int mpvInitialize(Pointer<Void> handle) {
   return _mpvInitialize(handle);
 }
 
-int mpvObserveProperty(Pointer<Void> handle, String name, int format) {
+int mpvObserveProperty(Pointer<Void> handle, String name, int format,
+    [int userdata = 0]) {
   final n = name.toNativeUtf8();
-  final code = _mpvObserve(handle, 0, n, format);
+  final code = _mpvObserve(handle, userdata, n, format);
   calloc.free(n);
   return code;
+}
+
+int mpvUnobserveProperty(Pointer<Void> handle, [int userdata = 0]) {
+  return _mpvUnobserve(handle, userdata);
 }
 
 int mpvSetOption(Pointer<Void> handle, String name, String value) {

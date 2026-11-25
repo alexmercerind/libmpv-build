@@ -9,6 +9,12 @@ permissions:
   contents: write
   actions: read
 
+# A force-push supersedes the previous run on the same branch: cancel it
+# instead of burning runners on stale code.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build_audio:
     strategy:
