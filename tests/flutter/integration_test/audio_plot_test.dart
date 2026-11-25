@@ -132,37 +132,41 @@ void main() {
       }
     });
 
-    // Wait for the first subscribed pcm/fft updates, plus the JSON copy.
-    for (int i = 0; i < 20 && !(pcmLive && fftLive && jsonLive); i++) {
-      await Future<void>.delayed(const Duration(milliseconds: 500));
+    // The pump must stop even when an expect above throws; otherwise the
+    // periodic timer keeps the test process alive and the CI step hangs.
+    try {
+      // Wait for the first subscribed pcm/fft updates, plus the JSON copy.
+      for (int i = 0; i < 20 && !(pcmLive && fftLive && jsonLive); i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 500));
+      }
+      expect(pcmLive, isTrue, reason: 'no audio-pcm update received');
+      expect(fftLive, isTrue, reason: 'no audio-fft update received');
+      expect(jsonLive, isTrue, reason: 'no audio-fft JSON update received');
+
+      // Unsubscribe: no more pcm/fft node events must arrive while the rate
+      // stays configured, proving the tap idles when nobody listens. The JSON
+      // observation (separate userdata) keeps flowing, proving mpv_unobserve_property
+      // is selective.
+      expect(mpvUnobserveProperty(handle, kPlotUserdata), 2);
+      final int quietPcm = pcmEvents;
+      final int quietFft = fftEvents;
+      await Future<void>.delayed(const Duration(seconds: 2));
+      expect(pcmEvents, quietPcm, reason: 'audio-pcm fired after unobserve');
+      expect(fftEvents, quietFft, reason: 'audio-fft fired after unobserve');
+
+      // Resubscribe: fresh updates must resume on the same stream.
+      expect(mpvObserveProperty(handle, kAudioPcm, kFormatNode, kPlotUserdata),
+          0);
+      expect(mpvObserveProperty(handle, kAudioFft, kFormatNode, kPlotUserdata),
+          0);
+      resubscribed = true;
+      for (int i = 0; i < 20 && !(pcmBack && fftBack); i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 500));
+      }
+      expect(pcmBack, isTrue, reason: 'no audio-pcm update after resubscribe');
+      expect(fftBack, isTrue, reason: 'no audio-fft update after resubscribe');
+    } finally {
+      timer.cancel();
     }
-    expect(pcmLive, isTrue, reason: 'no audio-pcm update received');
-    expect(fftLive, isTrue, reason: 'no audio-fft update received');
-    expect(jsonLive, isTrue, reason: 'no audio-fft JSON update received');
-
-    // Unsubscribe: no more pcm/fft node events must arrive while the rate
-    // stays configured, proving the tap idles when nobody listens. The JSON
-    // observation (separate userdata) keeps flowing, proving mpv_unobserve_property
-    // is selective.
-    expect(mpvUnobserveProperty(handle, kPlotUserdata), 2);
-    final int quietPcm = pcmEvents;
-    final int quietFft = fftEvents;
-    await Future<void>.delayed(const Duration(seconds: 2));
-    expect(pcmEvents, quietPcm, reason: 'audio-pcm fired after unobserve');
-    expect(fftEvents, quietFft, reason: 'audio-fft fired after unobserve');
-
-    // Resubscribe: fresh updates must resume on the same stream.
-    expect(mpvObserveProperty(handle, kAudioPcm, kFormatNode, kPlotUserdata),
-        0);
-    expect(mpvObserveProperty(handle, kAudioFft, kFormatNode, kPlotUserdata),
-        0);
-    resubscribed = true;
-    for (int i = 0; i < 20 && !(pcmBack && fftBack); i++) {
-      await Future<void>.delayed(const Duration(milliseconds: 500));
-    }
-    expect(pcmBack, isTrue, reason: 'no audio-pcm update after resubscribe');
-    expect(fftBack, isTrue, reason: 'no audio-fft update after resubscribe');
-
-    timer.cancel();
   }, timeout: const Timeout(Duration(minutes: 3)));
 }

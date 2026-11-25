@@ -74,6 +74,7 @@ jobs:
           xvfb-run -a flutter test integration_test/mpv_test.dart -d linux
         working-directory: tests/flutter
       - name: Run Audio Plot Test
+        timeout-minutes: 15
         run: |
           export LD_LIBRARY_PATH=$PWD/mpv_libs/linux/native
           xvfb-run -a flutter test integration_test/audio_plot_test.dart -d linux
