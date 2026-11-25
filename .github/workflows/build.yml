@@ -171,7 +171,8 @@ jobs:
           files: dist/*
 
   test:
-    needs: [build_audio, build_audio_linux]
+    # TEMP(audio-plot): build_audio is gated off above; revert to both.
+    needs: [build_audio_linux]
     name: Test
     uses: ./.github/workflows/test.yml
     with:
