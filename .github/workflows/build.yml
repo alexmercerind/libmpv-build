@@ -17,8 +17,6 @@ concurrency:
 
 jobs:
   build_audio:
-    # TEMP(audio-plot): linux-only until the audio-plot API is solid; revert.
-    if: false
     strategy:
       fail-fast: false
       matrix:
@@ -171,16 +169,13 @@ jobs:
           files: dist/*
 
   test:
-    # TEMP(audio-plot): build_audio is gated off above; revert to both.
-    needs: [build_audio_linux]
+    needs: [build_audio, build_audio_linux]
     name: Test
     uses: ./.github/workflows/test.yml
     with:
       run-id: ${{ github.run_id }}
 
   combine_darwin:
-    # TEMP(audio-plot): linux-only until the audio-plot API is solid; revert.
-    if: false
     needs: build_audio
     runs-on: macos-15
     name: Combine universal macOS/iOS
