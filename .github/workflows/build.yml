@@ -9,8 +9,16 @@ permissions:
   contents: write
   actions: read
 
+# A force-push supersedes the previous run on the same branch: cancel it
+# instead of burning runners on stale code.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build_audio:
+    # TEMP(audio-plot): linux-only until the audio-plot API is solid; revert.
+    if: false
     strategy:
       fail-fast: false
       matrix:
@@ -170,6 +178,8 @@ jobs:
       run-id: ${{ github.run_id }}
 
   combine_darwin:
+    # TEMP(audio-plot): linux-only until the audio-plot API is solid; revert.
+    if: false
     needs: build_audio
     runs-on: macos-15
     name: Combine universal macOS/iOS

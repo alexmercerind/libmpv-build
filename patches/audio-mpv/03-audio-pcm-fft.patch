@@ -22,7 +22,7 @@ diff -ruN a/options/options.h b/options/options.h
      int rgain_mode;
 diff -ruN a/player/audio.c b/player/audio.c
 --- a/player/audio.c	2026-11-26 00:10:29
-+++ b/player/audio.c	2026-11-26 00:27:11
++++ b/player/audio.c	2026-11-26 00:39:40
 @@ -21,13 +21,24 @@
  #include <limits.h>
  #include <math.h>
@@ -56,7 +56,7 @@ diff -ruN a/player/audio.c b/player/audio.c
  
  enum {
      AD_OK = 0,
-@@ -48,6 +60,346 @@
+@@ -48,6 +60,353 @@
  
  static void ao_process(struct mp_filter *f);
  
@@ -301,15 +301,22 @@ diff -ruN a/player/audio.c b/player/audio.c
 +    if (got <= 0)
 +        return;
 +
-+    int keep = plot->pcm_num;
-+    if (keep + got > AUDIO_PLOT_PCM_MAX) {
-+        int drop = keep + got - AUDIO_PLOT_PCM_MAX;
-+        memmove(plot->pcm, plot->pcm + drop,
-+                (keep - drop) * sizeof(float));
-+        keep -= drop;
++    if (got >= AUDIO_PLOT_PCM_MAX) {
++        // Pathological upsample: keep only the newest window.
++        memcpy(plot->pcm, plot->resampled + got - AUDIO_PLOT_PCM_MAX,
++               AUDIO_PLOT_PCM_MAX * sizeof(float));
++        plot->pcm_num = AUDIO_PLOT_PCM_MAX;
++    } else {
++        int keep = plot->pcm_num;
++        if (keep + got > AUDIO_PLOT_PCM_MAX) {
++            int drop = keep + got - AUDIO_PLOT_PCM_MAX;
++            memmove(plot->pcm, plot->pcm + drop,
++                    (keep - drop) * sizeof(float));
++            keep -= drop;
++        }
++        memcpy(plot->pcm + keep, plot->resampled, got * sizeof(float));
++        plot->pcm_num = keep + got;
 +    }
-+    memcpy(plot->pcm + keep, plot->resampled, got * sizeof(float));
-+    plot->pcm_num = keep + got;
 +    double now = mp_time_sec();
 +    if (now - plot->pcm_notified >= 1.0 / 30.0) {
 +        plot->pcm_notified = now;
@@ -403,7 +410,7 @@ diff -ruN a/player/audio.c b/player/audio.c
  static void update_speed_filters(struct MPContext *mpctx)
  {
      struct ao_chain *ao_c = mpctx->ao_chain;
-@@ -266,6 +618,7 @@
+@@ -266,6 +625,7 @@
  
  static void ao_chain_uninit(struct ao_chain *ao_c)
  {
@@ -411,7 +418,7 @@ diff -ruN a/player/audio.c b/player/audio.c
      struct track *track = ao_c->track;
      if (track) {
          mp_assert(track->ao_c == ao_c);
-@@ -615,6 +968,7 @@
+@@ -615,6 +975,7 @@
      ao_c->spdif_passthrough = true;
      ao_c->last_out_pts = MP_NOPTS_VALUE;
      ao_c->delay = mpctx->opts->audio_delay;
@@ -419,7 +426,7 @@ diff -ruN a/player/audio.c b/player/audio.c
  
      ao_c->ao_filter = mp_filter_create(mpctx->filter_root, &ao_filter);
      if (!ao_c->filter || !ao_c->ao_filter)
-@@ -751,6 +1105,8 @@
+@@ -751,6 +1112,8 @@
              mp_frame_unref(&frame);
              return;
          }
