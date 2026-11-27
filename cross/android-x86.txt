@@ -1,4 +1,4 @@
-# ndk r27, api 21, 16k pages
+# ndk r29, api 21, 16k pages
 
 [binaries]
 pkg-config = 'pkg-config'

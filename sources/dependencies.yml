@@ -1,20 +1,20 @@
 - name: dav1d
-  version: 1.5.4
-  url: https://code.videolan.org/videolan/dav1d/-/archive/1.5.4/dav1d-1.5.4.tar.bz2
-  sha256: 2abfb0c89212e6e4733a54e0ae509ec00a5b845a6360946f918806e14aedb011
+  version: 1.5.5
+  url: https://code.videolan.org/videolan/dav1d/-/archive/1.5.5/dav1d-1.5.5.tar.bz2
+  sha256: afc5378daba30eafd11d7b4f0ec863270d7b175f38393a2e1e0ff76f3a45c8b9
   tool: meson
   dependencies: []
   variants: [video]
 - name: fast-float
-  version: 8.2.2
-  url: https://github.com/fastfloat/fast_float/archive/refs/tags/v8.2.2.tar.gz
-  sha256: e64b5fff88e04959154adbd5fb83331d91f2e04ac06454671cdfcbdff172b158
+  version: 8.4.0
+  url: https://github.com/fastfloat/fast_float/archive/refs/tags/v8.4.0.tar.gz
+  sha256: 0bf4277827259720028bbef6c11d400f07482608bea5952b289baaef6af141a4
   tool: cmake
   dependencies: []
 - name: ffmpeg
-  version: 9.0.2
-  url: https://ffmpeg.org/releases/ffmpeg-9.0.2.tar.xz
-  sha256: 8c3850283eb25fa026482078a04051e0be17347b09ef81a0849bec15a96e002e
+  version: "9.1"
+  url: https://ffmpeg.org/releases/ffmpeg-9.1.tar.xz
+  sha256: 1a4d394ae63d190a526cd052eb4415c156b5c5e2df37efab41a7de0b8fde2433
   tool: configure
   dependencies:
     - dav1d
@@ -48,9 +48,9 @@
   os: [ios, linux, macos, windows]
   variants: [video]
 - name: harfbuzz
-  version: 15.1.0
-  url: https://github.com/harfbuzz/harfbuzz/releases/download/15.1.0/harfbuzz-15.1.0.tar.xz
-  sha256: 0fc7c565443a5f4be7da65ac5ee5bd737d9b158dc908708b7689a0a5796b0c8d
+  version: 15.2.0
+  url: https://github.com/harfbuzz/harfbuzz/releases/download/15.2.0/harfbuzz-15.2.0.tar.xz
+  sha256: e2ec49090744383cdbe7df808c1cedaafba06a97be8dc4211fe546ba585f12cb
   tool: meson
   dependencies:
     - freetype
@@ -91,6 +91,8 @@
     - glslang
     - moltenvk-ios
     - moltenvk-macos
+    - shaderc
+    - spirv-cross
     - vulkan-headers
     - vulkan-loader
 - name: libxml2
@@ -101,15 +103,15 @@
   dependencies:
     - zlib
 - name: mbedtls
-  version: 3.6.7
-  url: https://github.com/Mbed-TLS/mbedtls/releases/download/mbedtls-3.6.7/mbedtls-3.6.7.tar.bz2
-  sha256: a7e8bcbec0e6f761b4af24f25677626b35f762f68eef79c08677a363212d11f6
+  version: 3.6.8
+  url: https://github.com/Mbed-TLS/mbedtls/releases/download/mbedtls-3.6.8/mbedtls-3.6.8.tar.bz2
+  sha256: bc54b818e87f49c0b3281dd85d24adaede0e63b4e822e3fbd49c005a38b9595b
   tool: cmake
   dependencies: []
 - name: mimalloc
-  version: 3.6.1
-  url: https://github.com/microsoft/mimalloc/archive/refs/tags/v3.6.1.tar.gz
-  sha256: 2672e6a99d4579fb4bb32d9de0d63aa424ce600d31fbfaf06eb74d940d2e07a6
+  version: 3.7.1
+  url: https://github.com/microsoft/mimalloc/archive/refs/tags/v3.7.1.tar.gz
+  sha256: 8bc9f820eaf3dad3509d7930d80c40512bc51e04989641f892ee64c46b7ab0d8
   tool: cmake
   dependencies: []
   os: [linux]
@@ -144,10 +146,42 @@
     - moltenvk-macos
     - vulkan-loader
     - zlib
+- name: shaderc
+  version: "2026.4"
+  url: https://github.com/google/shaderc/archive/refs/tags/v2026.4.tar.gz
+  sha256: f06ce5bcca94e5df7f34e115743597d0ad2e13c5fe9213c67dc8c76031241947
+  tool: cmake
+  dependencies: [glslang, spirv-headers, spirv-tools]
+  os: [windows]
+  variants: [video]
+- name: spirv-cross
+  version: 1.4.363.0
+  url: https://github.com/KhronosGroup/SPIRV-Cross/archive/refs/tags/vulkan-sdk-1.4.363.0.tar.gz
+  sha256: f708982e88b763ef5b0394ed468fc2c3628f68cdab89f2e7a946cd628c04e721
+  tool: cmake
+  dependencies: []
+  os: [windows]
+  variants: [video]
+- name: spirv-headers
+  version: 04fd3caa1e8267e4d95c806cad901181728e1006
+  url: https://github.com/KhronosGroup/SPIRV-Headers/archive/04fd3caa1e8267e4d95c806cad901181728e1006.tar.gz
+  sha256: 392f4801409aad9c4f1b77745f179952fd6264e4c8bd0fc1bc45dfa6807bf6d0
+  tool: source
+  dependencies: []
+  os: [windows]
+  variants: [video]
+- name: spirv-tools
+  version: 1.4.363.0
+  url: https://github.com/KhronosGroup/SPIRV-Tools/archive/refs/tags/vulkan-sdk-1.4.363.0.tar.gz
+  sha256: e6c83a215538fbfd265ccf398d3877985055df1273dbed73912bd05307664688
+  tool: source
+  dependencies: []
+  os: [windows]
+  variants: [video]
 - name: vulkan-headers
-  version: 1.4.368
-  url: https://github.com/KhronosGroup/Vulkan-Headers/archive/refs/tags/v1.4.368.tar.gz
-  sha256: 5c5c6f64fcce28a24cc934143a048707af036a858e4ed11d7f71fe016006ecda
+  version: 1.4.369
+  url: https://github.com/KhronosGroup/Vulkan-Headers/archive/refs/tags/v1.4.369.tar.gz
+  sha256: a63c6efc6f611e46aa83d65947398d548a718d3a32075e7b2238a930b3a42ced
   tool: cmake
   dependencies: []
 - name: vulkan-loader
@@ -157,11 +191,11 @@
   tool: cmake
   dependencies:
     - vulkan-headers
-  os: [linux, windows]
+  os: [linux]
   variants: [video]
 - name: zlib
-  version: 1.3.1
-  url: https://github.com/madler/zlib/releases/download/v1.3.1/zlib-1.3.1.tar.gz
-  sha256: 9a93b2b7dfdac77ceba5a558a580e74667dd6fede4585b91eefb60f03b72df23
+  version: "1.4"
+  url: https://github.com/madler/zlib/releases/download/v1.4/zlib-1.4.tar.gz
+  sha256: 02dd159783677a749c04adbdd02b55b8a2bcc7e054f51b76b549199a916ad584
   tool: configure
   dependencies: []

@@ -1,7 +1,7 @@
 diff --git a/meson.build b/meson.build
 --- a/meson.build
 +++ b/meson.build
-@@ -28,11 +28,9 @@ libswscale = dependency('libswscale', version: '>= 7.5.100')
+@@ -29,12 +29,10 @@
  
  libplacebo = dependency('libplacebo', version: '>=7.387.0',
                  default_options: ['default_library=static', 'demos=false'])
@@ -18,7 +18,7 @@ diff --git a/meson.build b/meson.build
 diff --git a/meson.build b/meson.build
 --- a/meson.build
 +++ b/meson.build
-@@ -48,7 +48,7 @@
+@@ -46,6 +46,6 @@
      'debug': get_option('debug'),
      'ffmpeg': true,
      'gpl': get_option('gpl'),
@@ -26,12 +26,10 @@ diff --git a/meson.build b/meson.build
 +    'libass': false,
      'libplacebo': true,
  }
-
-
 diff --git a/meson.build b/meson.build
 --- a/meson.build
 +++ b/meson.build
-@@ -211,14 +211,12 @@
+@@ -205,14 +205,12 @@
      'stream/stream_env.c',
  
      ## Subtitles
@@ -60,7 +58,7 @@ diff --git a/player/command.c b/player/command.c
 diff --git a/player/command.c b/player/command.c
 --- a/player/command.c
 +++ b/player/command.c
-@@ -4038,7 +4037,7 @@
+@@ -4037,7 +4037,7 @@
  static int mp_property_libass_version(void *ctx, struct m_property *prop,
                                        int action, void *arg)
  {
@@ -83,7 +81,7 @@ diff --git a/sub/dec_sub.c b/sub/dec_sub.c
 diff --git a/sub/dec_sub.c b/sub/dec_sub.c
 --- a/sub/dec_sub.c
 +++ b/sub/dec_sub.c
-@@ -45,7 +44,6 @@
+@@ -44,7 +44,6 @@
  #if HAVE_SUBRANDR
      &sd_sbr,
  #endif
@@ -162,7 +160,7 @@ diff --git a/sub/packer.c b/sub/packer.c
 diff --git a/sub/packer.c b/sub/packer.c
 --- a/sub/packer.c
 +++ b/sub/packer.c
-@@ -269,64 +267,6 @@
+@@ -267,64 +267,6 @@
  // If libass reported any change, image_lists_changed must be set (it then
  // repacks all images). preferred_osd_format can be set to a desired
  // sub_bitmap_format. Currently, only SUBBITMAP_LIBASS is supported.
@@ -260,7 +258,7 @@ diff --git a/sub/sd_ass.c b/sub/sd_ass.c
 diff --git a/sub/sd_ass.c b/sub/sd_ass.c
 --- a/sub/sd_ass.c
 +++ b/sub/sd_ass.c
-@@ -37,38 +36,9 @@
+@@ -36,38 +36,9 @@
  #include "video/csputils.h"
  #include "video/mp_image.h"
  #include "dec_sub.h"
@@ -302,7 +300,7 @@ diff --git a/sub/sd_ass.c b/sub/sd_ass.c
 diff --git a/sub/sd_ass.c b/sub/sd_ass.c
 --- a/sub/sd_ass.c
 +++ b/sub/sd_ass.c
-@@ -97,712 +67,6 @@
+@@ -67,712 +67,6 @@
      .change_flags = UPDATE_SUB_FILT,
  };
  
@@ -1018,7 +1016,7 @@ diff --git a/sub/sd_ass.c b/sub/sd_ass.c
 diff --git a/sub/sd_ass.c b/sub/sd_ass.c
 --- a/sub/sd_ass.c
 +++ b/sub/sd_ass.c
-@@ -856,387 +120,6 @@
+@@ -120,387 +120,6 @@
      }
  }
  
@@ -1406,4 +1404,3 @@ diff --git a/sub/sd_ass.c b/sub/sd_ass.c
  int sd_ass_fmt_offset(const char *evt_fmt)
  {
      // "Text" is always last (as it's arbitrary content in buf), e.g. format:
-

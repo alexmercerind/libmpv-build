@@ -1,5 +1,4 @@
 # hardware decoding
 
 --enable-d3d11va
---enable-dxva2
---enable-vulkan
+--enable-hwaccel=*_d3d11va*

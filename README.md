@@ -101,19 +101,21 @@ Examples:
 
 | Dependency       | Version   |
 | ---------------- | --------- |
-| `fast-float`     | `8.2.2`   |
-| `ffmpeg`         | `9.0.2`   |
+| `fast-float`     | `8.4.0`   |
+| `ffmpeg`         | `9.1`     |
 | `libplacebo`     | `7.387.0` |
 | `libxml2`        | `2.15.4`  |
-| `mbedtls`        | `3.6.7`   |
-| `mimalloc`       | `3.6.1`   |
+| `mbedtls`        | `3.6.8`   |
+| `mimalloc`       | `3.7.1`   |
 | `mpv`            | `0.42.0`  |
-| `vulkan-headers` | `1.4.368` |
-| `zlib`           | `1.3.1`   |
+| `vulkan-headers` | `1.4.369` |
+| `zlib`           | `1.4`     |
+
+The full list of pinned libraries and checksums is in [sources/dependencies.yml](sources/dependencies.yml).
 
 ## Toolchains
 
-- Android: `NDK r27`, `API 21`
+- Android: `NDK r29`, `API 21`
 - iOS, macOS: `Xcode 16`
 - Linux: system `gcc`
-- Windows: [llvm-mingw](https://github.com/mstorsjo/llvm-mingw)
+- Windows: [llvm-mingw 20261117](https://github.com/mstorsjo/llvm-mingw/releases/tag/20261117)

@@ -3,7 +3,6 @@
 -Dauto_features=disabled
 -Dbuild-date=false
 -Dcplayer=false
--Dgl=disabled
 -Dgpl=false
 -Dlibmpv=true
 -Dlua=disabled

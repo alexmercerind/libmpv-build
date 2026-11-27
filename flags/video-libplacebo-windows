@@ -1,4 +1,8 @@
-# vulkan renderer
+# GPU renderers
 
--Dglslang=enabled
--Dvulkan=enabled
+-Dd3d11=enabled
+-Dshaderc=enabled
+-Dglslang=disabled
+-Dopengl=disabled
+-Dgl-proc-addr=disabled
+-Dvulkan=disabled

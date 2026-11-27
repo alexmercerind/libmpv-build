@@ -100,6 +100,7 @@ class BuildTool(str, Enum):
     CONFIGURE = "configure"
     MESON = "meson"
     PREBUILT = "prebuilt"
+    SOURCE = "source"
 
     def __str__(self):
         return self.value
@@ -327,12 +328,13 @@ def get_dependencies(base: Path, build_variant: Optional[BuildVariant] = None) -
 
 # Downloads and extracts the Android NDK once; returns its root
 def fetch_android_ndk(base: Path) -> Path:
-    root = base / TOOLCHAIN_DIR / "android"
+    release = "r29"
+    root = base / TOOLCHAIN_DIR / f"android-ndk-{release}"
     if (root / "toolchains").is_dir():
         return root
     root.mkdir(parents=True, exist_ok=True)
-    archive = base / TOOLCHAIN_DIR / "android-ndk-r27-linux.zip"
-    download("https://dl.google.com/android/repository/android-ndk-r27-linux.zip", "2f17eb8bcbfdc40201c0b36e9a70826fcd2524ab7a2a235e2c71186c302da1dc", archive)
+    archive = base / TOOLCHAIN_DIR / f"android-ndk-{release}-linux.zip"
+    download(f"https://dl.google.com/android/repository/{archive.name}", "4abbbcdc842f3d4879206e9695d52709603e52dd68d3c1fff04b3b5e7a308ecf", archive)
     unarchive(archive, root)
     kids = [kid for kid in root.iterdir() if not kid.name.startswith(".")]
     if len(kids) == 1 and kids[0].is_dir():
@@ -346,14 +348,15 @@ def fetch_android_ndk(base: Path) -> Path:
 
 # Downloads and extracts llvm-mingw once; returns its root
 def fetch_llvm_mingw(base: Path) -> Path:
-    root = base / TOOLCHAIN_DIR / "windows"
+    release = "20261117"
+    root = base / TOOLCHAIN_DIR / f"llvm-mingw-{release}"
     if (root / "bin").is_dir():
         return root
     root.mkdir(parents=True, exist_ok=True)
-    archive = base / TOOLCHAIN_DIR / "llvm-mingw-20251118-ucrt-ubuntu-22.04-x86_64.tar.xz"
+    archive = base / TOOLCHAIN_DIR / f"llvm-mingw-{release}-ucrt-ubuntu-22.04-x86_64.tar.xz"
     download(
-        "https://github.com/mstorsjo/llvm-mingw/releases/download/20251118/llvm-mingw-20251118-ucrt-ubuntu-22.04-x86_64.tar.xz",
-        "53a0c22caa46b501e1c089e1c31b24a7c0e0d5a86f8ad12b131aafd4cee01ef4",
+        f"https://github.com/mstorsjo/llvm-mingw/releases/download/{release}/{archive.name}",
+        "e7a15a49a2ea95e9f3d8a9d0cfabe5052a4b10fb4777cc54de5a8c27b64bb701",
         archive,
     )
     unarchive(archive, root)
@@ -758,6 +761,8 @@ def build_dependency(base: Path, dependency: Dependency, build_target: BuildTarg
     for path in get_patch_files(base, dependency.name, build_target, build_variant):
         print(f"applying {path}", flush=True)
         run(["patch", "-p1", "-i", str(path)], src)
+    if dependency.tool == BuildTool.SOURCE:
+        return
     flags = get_flags(base, dependency.name, build_target, build_variant)
     # Upstream opt-out: float formatting without std::to_chars (missing at runtime on old iOS).
     build_env = {**build_env, "CXXFLAGS": f"{build_env['CXXFLAGS']} -DHAS_STD_TO_CHARS_FP=0"}
@@ -777,6 +782,13 @@ def build_dependency(base: Path, dependency: Dependency, build_target: BuildTarg
         # Meson finds libraries only in its search dirs, not the prefix link
         # path; point its glslang lookup (static libs, no pkg-config) there.
         build_meson(src, prefix, cross_file, native_file, [*flags, f"-Dvulkan-sdk={prefix}"], build_env)
+    elif dependency.name == "shaderc":
+        # Build the combined archive so loading libmpv requires no shader compiler DLL.
+        flags.append(f"-DSHADERC_THIRD_PARTY_ROOT_DIR={src.parent}")
+        build_cmake(src, build_target, prefix, flags, build_env, ["shaderc_combined", "shaderc_combined-pkg-config"])
+        shutil.copytree(src / "libshaderc" / "include", prefix / "include", dirs_exist_ok=True)
+        shutil.copy(src / BUILD_DIR / "libshaderc" / "libshaderc_combined.a", prefix / "lib")
+        shutil.copy(src / BUILD_DIR / "shaderc_combined.pc", prefix / "lib" / "pkgconfig" / "shaderc.pc")
     elif dependency.tool == BuildTool.PREBUILT:
         build_prebuilt(base, dependency, src, build_target, prefix)
     elif dependency.tool == BuildTool.MESON:
@@ -930,7 +942,7 @@ def build_meson(src: Path, prefix: Path, cross_file: Path, native_file: Optional
 
 
 # Builds and installs with cmake
-def build_cmake(src: Path, build_target: BuildTarget, prefix: Path, args: list[str], build_env: BuildEnv) -> None:
+def build_cmake(src: Path, build_target: BuildTarget, prefix: Path, args: list[str], build_env: BuildEnv, targets: Optional[list[str]] = None) -> None:
     builddir = src / BUILD_DIR
     shutil.rmtree(builddir, ignore_errors=True)
     builddir.mkdir()
@@ -955,6 +967,9 @@ def build_cmake(src: Path, build_target: BuildTarget, prefix: Path, args: list[s
         builddir,
         {**build_env, "CMAKE_PREFIX_PATH": str(prefix)},
     )
+    if targets:
+        run(["cmake", "--build", ".", "--parallel", JOBS, "--target", *targets], builddir, build_env)
+        return
     run(["cmake", "--build", ".", "--parallel", JOBS], builddir, build_env)
     run(["cmake", "--install", "."], builddir, build_env)
 

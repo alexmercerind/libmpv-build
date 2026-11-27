@@ -1,0 +1,7 @@
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -366 +366 @@
+-	spirv_cross_add_library(spirv-cross-c-shared spirv_cross_c_shared SHARED
++	spirv_cross_add_library(spirv-cross-c-shared spirv_cross_c_shared STATIC
+@@ -422 +421,0 @@
+-	target_compile_definitions(spirv-cross-c-shared PRIVATE SPVC_EXPORT_SYMBOLS)

@@ -1,4 +1,8 @@
-# video outputs
+# Direct D3D11 output with the libmpv software renderer as fallback
 
--Dgl-win32=enabled
--Dvulkan=enabled
+-Dd3d11=enabled
+-Dd3d-hwaccel=enabled
+-Dshaderc=enabled
+-Dspirv-cross=enabled
+-Dgl=disabled
+-Dplain-gl=disabled
